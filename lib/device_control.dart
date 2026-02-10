@@ -1,0 +1,282 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_libserialport/flutter_libserialport.dart';
+import 'debug_protocol.dart';
+
+// 数据模型更新
+class RegisteredVar {
+  final int id;
+  final String name;
+  final int type; // 纯类型 (0-6)
+  final int addr;
+  final bool isHighFreq; // 是否高频
+  dynamic value;
+
+  RegisteredVar(this.id, this.name, this.type, this.addr, {this.value = 0, this.isHighFreq = false});
+}
+
+class DeviceController extends ChangeNotifier {
+  SerialPort? _port;
+  SerialPortReader? _reader;
+  bool isConnected = false;
+  bool shakeHandSuccessful = false;
+  final List<String> logs = [];
+  final Map<int, RegisteredVar> registry = {}; 
+  final StreamController<String> _rawLogCtrl = StreamController<String>.broadcast();
+  Stream<String> get rawLogStream => _rawLogCtrl.stream;
+  Completer<bool>? _handshakeCompleter;
+  final _highFreqDataCtrl = StreamController<MapEntry<int, double>>.broadcast();
+  Stream<MapEntry<int, double>> get highFreqStream => _highFreqDataCtrl.stream;
+  // 优化缓冲区：使用指针法，不频繁remove
+  final List<int> _rxBuffer = [];
+  static const int MAX_BUFFER_SIZE = 1024 * 1024;
+
+Future<bool> connect(String portName, int baudRate) async {
+    try {
+      disconnect(); // 先断开旧的
+      
+      _port = SerialPort(portName);
+      
+      // 注意：libserialport 的 openReadWrite 其实是同步阻塞的 C 可以在这里执行
+      // 但因为它很快，通常不会卡死 UI。
+      if (!_port!.openReadWrite()) {
+        print("打开串口失败: ${SerialPort.lastError}");
+        return false;
+      }
+
+      SerialPortConfig config = _port!.config;
+      config.baudRate = baudRate;
+      _port!.config = config;
+
+      // Reader 会在底层创建一个 Isolate 或者 Stream，这是真正的异步读取
+      _reader = SerialPortReader(_port!);
+      _reader!.stream.listen(
+        (data) => _onDataReceived(data),
+        onError: (e) {
+           disconnect(); // 发生错误自动断开
+           print("串口读取错误: $e");
+        },
+        onDone: () => disconnect(), // 流结束（比如拔线）自动断开
+      );
+
+      isConnected = true;
+      shakeHandSuccessful = false; // 连接刚建立，握手状态重置
+      notifyListeners();
+      
+      // 可选：连接后自动握手
+      // await shakeWithMCU(); 
+      
+      return true;
+    } catch (e) {
+      print("Connect Exception: $e");
+      return false;
+    }
+  }
+
+  // void disconnect() {
+  //   _reader?.close();
+  //   _port?.close();
+  //   _port = null;
+  //   isConnected = false;
+  //   _rxBuffer.clear();
+  //   registry.clear();
+  //   notifyListeners();
+  // }
+  void disconnect() {
+    // 断开连接时，如果有正在等待的握手，直接让它失败
+    if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
+      _handshakeCompleter!.complete(false);
+      _handshakeCompleter = null;
+    }
+    
+    _reader?.close();
+    _port?.close();
+    _port = null;
+    isConnected = false;
+    shakeHandSuccessful = false;
+    // _rxBuffer.clear(); 
+    // registry.clear();
+    notifyListeners();
+  }
+  Future<bool> shakeWithMCU() async {
+    if (!isConnected) return false;
+
+    // 1. 如果上一次握手还在进行中，先取消它
+    if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
+      _handshakeCompleter!.complete(false);
+    }
+
+    // 2. 创建一个新的 Completer
+    _handshakeCompleter = Completer<bool>();
+
+    // 3. 发送数据
+    try {
+      print("发送握手包...");
+      sendData(DebugProtocol.packHandshake());
+    } catch (e) {
+      return false;
+    }
+
+    // 4. 等待结果，设置超时时间 (比如 2 秒)
+    // 这里并没有真正去"读"数据，而是等待 _onDataReceived 里调用 complete
+    try {
+      bool result = await _handshakeCompleter!.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          // 超时处理
+          print("握手超时");
+          return false;
+        },
+      );
+      return result;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  void sendData(Uint8List data) {
+    if (_port != null && _port!.isOpen) _port!.write(data);
+  }
+
+  void _onDataReceived(Uint8List newData) {
+    if (newData.isEmpty) return;
+    
+    // Raw Hex Log
+    final timeStr = DateTime.now().toString().split(' ')[1].substring(0, 12);
+    final hexStr = newData.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' ');
+    _rawLogCtrl.add("[$timeStr] Rx: $hexStr");
+
+    _rxBuffer.addAll(newData);
+    if (_rxBuffer.length > MAX_BUFFER_SIZE) _rxBuffer.clear();
+
+    int parseIndex = 0;
+    int bufferLen = _rxBuffer.length;
+
+    while (parseIndex < bufferLen) {
+      if (_rxBuffer[parseIndex] != 0xAA) {
+        parseIndex++;
+        continue;
+      }
+      if (bufferLen - parseIndex < 4) break;
+
+      int vid = _rxBuffer[parseIndex + 1];
+      int vrawType = _rxBuffer[parseIndex + 2]; // 包含频率位的原始 Type
+      int vlen = _rxBuffer[parseIndex + 3];
+      int packetLen = 6 + vlen;
+
+      if (bufferLen - parseIndex < packetLen) break;
+
+      List<int> fullPacket = _rxBuffer.sublist(parseIndex, parseIndex + packetLen);
+      List<int> checkPayload = fullPacket.sublist(1, 4 + vlen);
+      int crcRecv = (fullPacket[4 + vlen] << 8) | fullPacket[5 + vlen];
+      int crcCalc = DebugProtocol.calcCrc(checkPayload);
+
+      if (crcCalc == crcRecv) {
+        Uint8List dataPart = Uint8List.fromList(fullPacket.sublist(4, 4 + vlen));
+        // 传递 rawType 进去，在 process 里面拆解
+        _processPacket(vid, vrawType, vlen, dataPart);
+        parseIndex += packetLen;
+      } else {
+        parseIndex++;
+      }
+    }
+    if (parseIndex > 0) _rxBuffer.removeRange(0, parseIndex);
+  }
+
+  void _processPacket(int vid, int rawType, int vlen, Uint8List dataPart) {
+    // 握手包 (ID=0xFD)
+    if (vid == 0xFD) {
+      print("收到握手回复!");
+      shakeHandSuccessful = true;
+      notifyListeners();
+
+      // 关键：如果此时有正在等待的 Completer，告诉它成功了！
+      if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
+        _handshakeCompleter!.complete(true);
+        _handshakeCompleter = null; // 用完置空
+      }
+      return;
+    }
+
+    // 元数据注册 (ID=0xFE)
+    // 注意：下位机回传的 Type 字节也应该包含频率位
+    if (vid == 0xFE) {
+      // 期望是 16 字节: ID(1) + RawType(1) + Addr(4) + Name(10)
+      if (dataPart.length == 16) {
+        int regId = dataPart[0];
+        int regRawType = dataPart[1];
+        
+        // 【修改点】解析 4 字节地址
+        int regAddr = ByteData.sublistView(dataPart, 2, 6).getUint32(0, Endian.big);
+        String name = ascii.decode(dataPart.sublist(6, 16), allowInvalid: true).split('\x00').first;
+
+        // 【修改点】拆解类型和频率
+        int realType = regRawType & DebugProtocol.maskType;
+        bool isHigh = (regRawType & DebugProtocol.maskFreq) != 0;
+
+        registry[regId] = RegisteredVar(regId, name, realType, regAddr, isHighFreq: isHigh);
+        notifyListeners();
+      }
+      return;
+    }
+
+    // 日志 (ID=0xFF)
+    if (vid == 0xFF) {
+       String msg = ascii.decode(dataPart, allowInvalid: true).split('\x00').first;
+       logs.add("[MCU] $msg");
+       if (logs.length > 50) logs.removeAt(0);
+       notifyListeners();
+       return;
+    }
+
+    // 普通变量值
+    if (registry.containsKey(vid)) {
+      dynamic val = 0;
+      final bd = ByteData.sublistView(dataPart);
+      
+      // 获取纯类型
+      int type = registry[vid]!.type;
+
+      if (vlen == 1) val = bd.getUint8(0);
+      else if (vlen == 2) val = bd.getUint16(0, Endian.big);
+      else if (vlen == 4) {
+        if (type == 6) // Float
+          val = bd.getFloat32(0, Endian.big);
+        else 
+          val = bd.getUint32(0, Endian.big);
+      }
+      
+      registry[vid]!.value = val;
+      
+      // TODO: 如果是高频数据(registry[vid]!.isHighFreq)，建议推送到波形Stream，而不是 notifyListeners()
+      if (registry[vid]!.isHighFreq) {
+        _highFreqDataCtrl.add(MapEntry(vid, val.toDouble()));
+      } else {
+        notifyListeners(); // 低频变量才触发全局刷新
+      }
+    }
+  }
+  void reorderRegistry(int oldIndex, int newIndex) {
+    // 1. 将现有的 Key 转为 List
+    List<int> keys = registry.keys.toList();
+
+    // 2. 调整 List 里的顺序
+    final int item = keys.removeAt(oldIndex);
+    keys.insert(newIndex, item);
+
+    // 3. 创建一个新的临时 Map，按新顺序存放
+    final Map<int, RegisteredVar> sortedMap = {};
+    for (var key in keys) {
+      sortedMap[key] = registry[key]!;
+    }
+
+    // 4. 清空原 Map 并重新填充（或者直接替换引用）
+    registry.clear();
+    registry.addAll(sortedMap);
+
+    // 5. 通知 UI 刷新
+    notifyListeners();
+  }
+}
