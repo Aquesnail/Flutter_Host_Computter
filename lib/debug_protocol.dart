@@ -4,7 +4,7 @@ import 'dart:typed_data';
 /// 变量类型定义 (对应 Python 中的 0-6)
 enum VariableType { 
   uint8, int8, uint16, int16, uint32, int32, float ;
-  String get displayName => this.name;
+  String get displayName => name;
   }
 
 class DebugProtocol {
@@ -53,15 +53,18 @@ class DebugProtocol {
     if (varLen == 1) {
       inner.addByte(value & 0xFF);
     } else if (varLen == 2) {
-      if (varTypeInt == 3) // int16
+      if (varTypeInt == 3) {
+        // int16
          bData.setInt16(0, value, Endian.big);
-      else 
-         bData.setUint16(0, value, Endian.big);
+      } else {
+        bData.setUint16(0, value, Endian.big);
+      }
       inner.add(bData.buffer.asUint8List(0, 2));
     } else if (varLen == 4) {
-      if (varTypeInt == 6) // Float
+      if (varTypeInt == 6) {
+        // Float
         bData.setFloat32(0, value.toDouble(), Endian.big);
-      else if (varTypeInt == 5) // Int32
+      } else if (varTypeInt == 5) // Int32
         bData.setInt32(0, value, Endian.big);
       else 
         bData.setUint32(0, value, Endian.big);
@@ -92,7 +95,9 @@ class DebugProtocol {
     List<int> nameBytes = ascii.encode(name);
     if (nameBytes.length > 10) nameBytes = nameBytes.sublist(0, 10);
     inner.add(nameBytes);
-    for (int i = 0; i < 10 - nameBytes.length; i++) inner.addByte(0);
+    for (int i = 0; i < 10 - nameBytes.length; i++) {
+      inner.addByte(0);
+    }
 
     return _finalizeFrame(0x56, inner.takeBytes());
   }

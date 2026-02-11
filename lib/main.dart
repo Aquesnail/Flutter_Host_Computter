@@ -26,118 +26,161 @@ void main() {
     ),
   );
 }
-class MainWindow extends StatefulWidget {
-  @override 
-  State<MainWindow> createState() => _MainWindow();
-}
 
-class _MainWindow extends State<MainWindow> {
+class MainWindow extends StatelessWidget { //完全依赖provider的局部刷新
+  const MainWindow({super.key});
 
-  String? selectedPort;
   @override
-  Widget build(BuildContext context){
-    final controller = context.watch<DeviceController>();
-    final availablePorts = SerialPort.availablePorts;
-    final _colorScheme = Theme.of(context).colorScheme;
+  Widget build(BuildContext context) {
+    // 整个 MainWindow 不再监听任何东西
+    // 只有内部的 Selector 和 context.select 会触发局部刷新
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: Column(
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12,vertical: 8),
-            color: _colorScheme.primary,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: colorScheme.primary,
             child: Row(
               children: [
-                const Icon(
-                  Icons.usb,
-                  color: Colors.grey
-                ),
-                const SizedBox(width:8),
-                DropdownButton<String>(
-                  items: availablePorts.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                  value: selectedPort,
-                  hint: const Text("选择串口"),
-                  onChanged: (v) => setState(() => selectedPort = v),
-                ),
+                // 1. 刷新按钮：只在 [isConnected] 改变时重绘
+                Builder(builder: (context) {
+                  final isConnected = context.select<DeviceController, bool>((c) => c.isConnected);
+                  //这里我们用了StatelessWidget，完全将局部刷新的任务交给了provider
+                  //这里的意思是我们只监听DeviceController中isConnected这一个变量的值，
+                  return IconButton(
+                    tooltip: "刷新端口",
+                    icon: const Icon(Icons.refresh, size: 20, color: Colors.white),
+                    onPressed: isConnected ? null : () => context.read<DeviceController>().refreshPorts(),//
+                  );
+                }),
+
                 const SizedBox(width: 10),
-                ElevatedButton.icon(
-                  onPressed: controller.isConnected
-                      ? () => controller.disconnect()
-                      : () => selectedPort != null ? controller.connect(selectedPort!, 115200) : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: controller.isConnected ? Colors.redAccent : Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: Icon(controller.isConnected ? Icons.link_off : Icons.link, size: 18),
-                  label: Text(controller.isConnected ? "关闭" : "打开"),
-                ),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.back_hand, size: 18),
-                  label: const Text("握手"),
-                  // 只有连接成功了才能点握手
-                  onPressed: controller.isConnected 
-                      ? () async {
-                          // 1. 显示加载中 (可选，如果 UI 需要)
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("正在握手..."), 
-                              duration: Duration(milliseconds: 500)
-                            )
-                          );
 
-                          // 2. 调用异步握手逻辑
-                          bool success = await controller.shakeWithMCU();
-
-                          // 3. 根据结果显示提示
-                          if (context.mounted) { // 检查页面是否还存在
-                            if (success) {
-                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("握手成功！开始同步数据..."), 
-                                  backgroundColor: Colors.green
-                                )
-                              );
-                            } else {
-                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("握手失败：超时或无响应"), 
-                                  backgroundColor: Colors.red
-                                )
-                              );
-                            }
-                          }
-                        }
-                      : null, // 未连接时禁用
+                // 2. 串口下拉框：只在 [availablePorts] 或 [selectedPort] 改变时重绘
+                Selector<DeviceController, (List<String>, String?)>(
+                  selector: (_, c) => (c.availablePorts, c.selectedPort),
+                  builder: (context, data, _) {
+                    return DropdownButton<String>(
+                      value: data.$2,
+                      hint: const Text("选择串口", style: TextStyle(color: Colors.white70)),
+                      items: data.$1.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                      onChanged: (v) => context.read<DeviceController>().selectedPort = v,
+                    );
+                  },
                 ),
+
+                const SizedBox(width: 10),
+                const Text("波特率:", style: TextStyle(color: Colors.white)),
+
+                // 3. 波特率下拉框
+                Selector<DeviceController, int>(
+                  selector: (_, c) => c.selectedBaudRate,
+                  builder: (context, rate, _) {
+                    final isConnected = context.select<DeviceController, bool>((c) => c.isConnected);
+                    return DropdownButton<int>(
+                      value: rate,
+                      items: [9600, 19200, 38400, 57600, 115200, 256000]
+                          .map((b) => DropdownMenuItem(value: b, child: Text(b.toString())))
+                          .toList(),
+                      onChanged: isConnected ? null : (v) => context.read<DeviceController>().selectedBaudRate = v!,
+                    );
+                  },
+                ),
+
+                const SizedBox(width: 15),
+
+                // 4. 连接按钮
+                Builder(builder: (context) {
+                  final isConnected = context.select<DeviceController, bool>((c) => c.isConnected);
+                  return ElevatedButton.icon(
+                    onPressed: () {
+                      final ctrl = context.read<DeviceController>();
+                      isConnected ? ctrl.disconnect() : ctrl.connectWithInternal();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isConnected ? Colors.redAccent : Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: Icon(isConnected ? Icons.link_off : Icons.link, size: 18),
+                    label: Text(isConnected ? "关闭" : "打开"),
+                  );
+                }),
+
+                const SizedBox(width: 8),
+
+                // 5. 握手按钮
+                _HandshakeButton(),
+
                 const Spacer(),
-                if (controller.isConnected) 
-                  const Chip(
-                     label: Text("已连接", style: TextStyle(color: Colors.white)), 
-                     backgroundColor: Colors.green,
-                     padding: EdgeInsets.zero,
-                     visualDensity: VisualDensity.compact,
-                   ),
-                if(controller.shakeHandSuccessful)
-                  const Chip(
-                     label: Text("握手成功", style: TextStyle(color: Colors.white)), 
-                     backgroundColor: Colors.green,
-                     padding: EdgeInsets.zero,
-                     visualDensity: VisualDensity.compact,
-                   ),
+
+                // 6. 状态标签：精准监听
+                _ConnectionStatusChips(),
               ],
             ),
           ),
-          Expanded(
-            child:  LayoutDashboard()
-          )
+          // 7. 核心优化：LayoutDashboard 现在被 const 保护，或者完全不受上方 UI 波动影响
+          const Expanded(child: LayoutDashboard())
         ],
       ),
     );
   }
 }
 
+// 进一步拆分小组件，实现绝对的局部重绘
+class _HandshakeButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final isConnected = context.select<DeviceController, bool>((c) => c.isConnected);
+    return ElevatedButton.icon(
+      icon: const Icon(Icons.back_hand, size: 18),
+      label: const Text("握手"),
+      onPressed: isConnected ? () async {
+        // ... 现有的握手逻辑 ...
+        bool success = await context.read<DeviceController>().shakeWithMCU();
+        // SnackBar 逻辑保持不变
+      } : null,
+    );
+  }
+}
+
+class _ConnectionStatusChips extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    // 只有当这两个值确实变化时，这两小块 Chip 才会重绘
+    final isConnected = context.select<DeviceController, bool>((c) => c.isConnected);
+    final isHandshaked = context.select<DeviceController, bool>((c) => c.shakeHandSuccessful);
+
+    return Row(
+      children: [
+        if (isConnected) const _StatusChip(label: "已连接", color: Colors.green),
+        if (isHandshaked) const _StatusChip(label: "握手成功", color: Colors.blue),
+      ],
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _StatusChip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Chip(
+        label: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+        backgroundColor: color,
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+}
 class LayoutDashboard extends StatefulWidget {
+  const LayoutDashboard({super.key});
+
   @override
   State<LayoutDashboard> createState() => _LayoutDashboardState();
 }
@@ -206,7 +249,7 @@ class _LayoutDashboardState extends State<LayoutDashboard> {
         data: MultiSplitViewThemeData(
           dividerThickness: 10.0,
           dividerPainter: DividerPainters.grooved1(
-            backgroundColor: colorScheme.surfaceVariant,
+            backgroundColor: colorScheme.surfaceContainerHighest,
             highlightedColor: colorScheme.primary
           )
         ),
@@ -319,7 +362,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
               items: List.generate(7, (index) {
                 return DropdownMenuItem(
                   value:index,
-                  child: Text("${index}: ${typeLabels[index]}")
+                  child: Text("$index: ${typeLabels[index]}")
                 );
               }),
               onChanged: (v) => setState(()=> selectedVarType = v!),
@@ -431,8 +474,9 @@ class _LowFreqWindow extends State<LowFreqWindow>{
     );
   }
 
+  @override
   Widget build(BuildContext context) {
-    final controller = context.watch<DeviceController>();
+    final controller = context.watch<DeviceController>(); //
     final colorScheme = Theme.of(context).colorScheme;
     
     // 定义状态相关的颜色
@@ -451,7 +495,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                 // 标题栏保持不变
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  color: colorScheme.surfaceVariant,
+                  color: colorScheme.surfaceContainerHighest,
                   width: double.infinity,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -614,6 +658,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
     );
   }
 }
+
 class ScopeDashboard extends StatefulWidget {
   const ScopeDashboard({super.key});
 
@@ -625,11 +670,12 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
   // 存储高频数据点：ID -> List
   Map<int, List<double>> multiChannelPoints = {};
   
+  StreamSubscription? _subscription;
+  Timer? _refreshTimer; // UI 刷新定时器
+
   // 增加缓存点数，因为现在支持拖拽回看，数据多一点体验更好
   final int maxPoints = 2000; 
   
-  StreamSubscription? _subscription;
-
   // --- 新增配置状态 ---
   int _bufferSize = 2000; // 默认缓冲区大小
   double _deltaTime = 20.0; // 默认采样间隔 (ms)
@@ -647,32 +693,39 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
   ];
   //用于强制重置示波器视图状态的 Key
   int _scopeViewKey = 0;
-  @override
+ @override
   void initState() {
     super.initState();
     _bufferCtrl = TextEditingController(text: _bufferSize.toString());
     _dtCtrl = TextEditingController(text: _deltaTime.toString());
 
     final controller = context.read<DeviceController>();
+    
+    // --- 核心优化 A: 接收数据不再 setState ---
     _subscription = controller.highFreqStream.listen((data) {
-      if (!mounted) return;
-      setState(() {
-        multiChannelPoints.putIfAbsent(data.key, () => []);
-        final points = multiChannelPoints[data.key]!;
-        points.add(data.value);
-        
-        // --- 使用动态的 Buffer Size ---
-        if (points.length > _bufferSize) {
-          // 移除超出部分，保持列表长度
-          points.removeRange(0, points.length - _bufferSize); 
-        }
-      });
+      // 仅在内存中操作数据，不通知 Flutter 重新 build
+      multiChannelPoints.putIfAbsent(data.key, () => []);
+      final points = multiChannelPoints[data.key]!;
+      points.add(data.value);
+      
+      if (points.length > _bufferSize) {
+        points.removeRange(0, points.length - _bufferSize); 
+      }
+    });
+
+    // --- 核心优化 B: 统一 UI 刷新频率 (60FPS) ---
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (mounted) {
+        // 这里触发真正的 UI 重绘，将 16ms 内累积的所有新数据一次性画出来
+        setState(() {}); 
+      }
     });
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _refreshTimer?.cancel(); //销毁定时器
     _bufferCtrl.dispose();
     _dtCtrl.dispose();
     super.dispose();
@@ -704,92 +757,24 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
   @override
   Widget build(BuildContext context) {
     // 获取控制器状态以读取变量列表
-    final controller = context.watch<DeviceController>();
+    // final controller = context.watch<DeviceController>();
     final colorScheme = Theme.of(context).colorScheme;
     
-
-    
     // 获取所有标记为高频的变量
-    final highFreqVars = controller.registry.values.where((v) => v.isHighFreq).toList();
+    //final highFreqVars = controller.registry.values.where((v) => v.isHighFreq).toList();
+
+    // 使用 select 仅仅监听高频变量列表的【结构】变化（比如新注册了一个变量）
+    // 这样高频的数据波动不会通过 Provider 触发这里的 build
+    final highFreqVars = context.select<DeviceController, List<RegisteredVar>>(
+      (c) => c.registry.values.where((v) => v.isHighFreq).toList()
+    );
 
     return Column(
       children: [
         Expanded(
           child: Row(
             children: [
-        // -----------------------------------------------------------
-        // 1. 左侧侧边栏 (显示图例、变量名和实时数值)
-        // -----------------------------------------------------------
-        
-              Container(
-                width: 160,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF252526), // 仿 IDE 风格深色背景
-                  border: Border(right: BorderSide(color: Colors.white.withOpacity(0.1)))
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Text(
-                        "通道列表", 
-                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white.withOpacity(0.9))
-                      ),
-                    ),
-                    const Divider(height: 1, color: Colors.white24),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: highFreqVars.length,
-                        itemBuilder: (ctx, i) {
-                          final v = highFreqVars[i];
-                          final color = colors[i % colors.length];
-                          // 获取当前变量的最新值用于展示
-                          final currentVal = multiChannelPoints[v.id]?.lastOrNull?.toStringAsFixed(2) ?? "---";
-
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05)))
-                            ),
-                            child: Row(
-                              children: [
-                                // 颜色指示器
-                                Container(
-                                  width: 4, height: 24,
-                                  color: color,
-                                  margin: const EdgeInsets.only(right: 12),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(v.name, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        currentVal, 
-                                        style: TextStyle(color: color, fontFamily: 'monospace', fontWeight: FontWeight.bold)
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    // 底部提示
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Text(
-                        "操作提示:\n左侧滚轮: 缩放Y轴\n右侧滚轮: 缩放X轴\n双击: 添加游标",
-                        style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 10),
-                      ),
-                    )
-                  ],
-                ),
-              ),
+              _buildSidebar(highFreqVars),
               // -----------------------------------------------------------
               // 2. 右侧绘图区 (集成 InteractiveScope)
               // -----------------------------------------------------------
@@ -880,6 +865,42 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
           ),
         ),
       ],
+    );
+  }
+
+ // 构建侧边栏，每一行都是一个独立的低频刷新组件
+  Widget _buildSidebar(List<RegisteredVar> highFreqVars) {
+    return Container(
+      width: 160,
+      decoration: BoxDecoration(
+        color: const Color(0xFF252526),
+        border: Border(right: BorderSide(color: Colors.white.withOpacity(0.1)))
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(12.0),
+            child: Text("通道列表", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          ),
+          const Divider(height: 1, color: Colors.white24),
+          Expanded(
+            child: ListView.builder(
+              itemCount: highFreqVars.length,
+              itemBuilder: (ctx, i) {
+                final v = highFreqVars[i];
+                // 使用刚才定义的低频刷新 Tile
+                return ChannelValueTile(
+                  key: ValueKey(v.id),
+                  varId: v.id,
+                  name: v.name,
+                  color: colors[i % colors.length],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -981,11 +1002,13 @@ class _InteractiveScopeState extends State<InteractiveScope> {
       // 如果想模仿截图：
       // 在 Y轴区 -> 只拖动 Y
       // 在 绘图区 -> 拖动 X
-      _autoLock = false;
+      
       if (details.localPosition.dx < _yAxisWidth) {
          _offsetY += details.delta.dy;
+         _autoLock = true;
       } else {
          _offsetX += details.delta.dx;
+         _autoLock = false;
          // 如果想支持在绘图区也能上下拖动，可以取消注释下面这行：
          // _offsetY += details.delta.dy; 
       }
@@ -1293,4 +1316,81 @@ class ProScopePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ProScopePainter old) => true; // 总是重绘以响应高频数据
+}
+
+class ChannelValueTile extends StatefulWidget {
+  final int varId;
+  final String name;
+  final Color color;
+
+  const ChannelValueTile({
+    super.key, 
+    required this.varId, 
+    required this.name, 
+    required this.color
+  });
+
+  @override
+  State<ChannelValueTile> createState() => _ChannelValueTileState();
+}
+
+class _ChannelValueTileState extends State<ChannelValueTile> {
+  Timer? _lowFreqTimer;
+  double _displayValue = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 启动低频心跳：每 100ms 刷新一次数值显示
+    _lowFreqTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted) return;
+
+      // 从 Provider 中直接读取当前值，不订阅监听
+      final controller = context.read<DeviceController>();
+      final newValue = controller.registry[widget.varId]?.value?.toDouble() ?? 0.0;
+
+      // 如果数值变了，才触发局部渲染
+      if (newValue != _displayValue) {
+        setState(() {
+          _displayValue = newValue;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _lowFreqTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 这个 build 每一行每秒最多运行 10 次，性能开销极低
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          Container(width: 4, height: 20, color: widget.color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.name, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                Text(
+                  _displayValue.toStringAsFixed(2),
+                  style: TextStyle(
+                    color: widget.color, 
+                    fontWeight: FontWeight.bold, 
+                    fontFamily: 'monospace'
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

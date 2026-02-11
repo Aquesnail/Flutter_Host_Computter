@@ -33,6 +33,32 @@ class DeviceController extends ChangeNotifier {
   final List<int> _rxBuffer = [];
   static const int MAX_BUFFER_SIZE = 1024 * 1024;
 
+  String? _selectedPort;
+  int _selectedBaudRate = 115200;
+  List<String> _availablePorts = [];
+
+  String? get selectedPort => _selectedPort;
+  int get selectedBaudRate => _selectedBaudRate;
+  List<String> get availablePorts => _availablePorts;
+
+  set selectedPort(String? v) {   //改变数值以后，调用这个方法，广播给监听这个类的各个函数
+    _selectedPort = v;
+    notifyListeners();
+  }
+
+  set selectedBaudRate(int v) {
+    _selectedBaudRate = v;
+    notifyListeners();
+  }
+
+  void refreshPorts() {
+    _availablePorts = SerialPort.availablePorts;
+    notifyListeners();
+  }
+Future<bool> connectWithInternal() async {
+    if (_selectedPort == null) return false;
+    return await connect(_selectedPort!, _selectedBaudRate);
+  }
 Future<bool> connect(String portName, int baudRate) async {
     try {
       disconnect(); // 先断开旧的
@@ -235,26 +261,24 @@ Future<bool> connect(String portName, int baudRate) async {
     if (registry.containsKey(vid)) {
       dynamic val = 0;
       final bd = ByteData.sublistView(dataPart);
-      
-      // 获取纯类型
       int type = registry[vid]!.type;
 
+      // 解析逻辑
       if (vlen == 1) val = bd.getUint8(0);
       else if (vlen == 2) val = bd.getUint16(0, Endian.big);
       else if (vlen == 4) {
-        if (type == 6) // Float
-          val = bd.getFloat32(0, Endian.big);
-        else 
-          val = bd.getUint32(0, Endian.big);
+        val = (type == 6) ? bd.getFloat32(0, Endian.big) : bd.getUint32(0, Endian.big);
       }
       
-      registry[vid]!.value = val;
-      
-      // TODO: 如果是高频数据(registry[vid]!.isHighFreq)，建议推送到波形Stream，而不是 notifyListeners()
-      if (registry[vid]!.isHighFreq) {
+      final variable = registry[vid]!;
+      variable.value = val; // 静默更新内存中的值
+
+      if (variable.isHighFreq) {
+        // --- 高频数据：只发流，不广播 ---
         _highFreqDataCtrl.add(MapEntry(vid, val.toDouble()));
       } else {
-        notifyListeners(); // 低频变量才触发全局刷新
+        // --- 低频数据：广播通知 UI 更新数值列表 ---
+        notifyListeners(); 
       }
     }
   }
@@ -280,3 +304,4 @@ Future<bool> connect(String portName, int baudRate) async {
     notifyListeners();
   }
 }
+
