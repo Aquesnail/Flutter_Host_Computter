@@ -8,6 +8,7 @@ import 'package:multi_split_view/multi_split_view.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import "lowfreq_window.dart";
+import "debug_console.dart";
 
 void main() {
   runApp(
@@ -113,6 +114,10 @@ class MainWindow extends StatelessWidget { //完全依赖provider的局部刷新
 
                 // 5. 握手按钮
                 _HandshakeButton(),
+
+                const SizedBox(width: 10),
+
+                const SerialTrafficMonitor(),
 
                 const Spacer(),
 
@@ -277,7 +282,7 @@ class _LayoutDashboardState extends State<LayoutDashboard> {
                 // 下面两格用次级色容器（通常是浅紫色或配套色），看出层次感
                 builder: (context, area) {
                   if(area.data == "bottom_left"){
-                    return const LowFreqWindow();
+                    return const BottomTabbedPanel();
                   }
                   return _buildContent(colorScheme.surface, "right_bottom");
                 }
@@ -301,6 +306,85 @@ class _LayoutDashboardState extends State<LayoutDashboard> {
     );
   }
   
+}
+
+class BottomTabbedPanel extends StatelessWidget {
+  const BottomTabbedPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    // 假设这是你接下来要写的第二个控件，暂时用占位符代替
+    final Widget secondWidget = Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.terminal, size: 48, color: Colors.grey),
+          const SizedBox(height: 10),
+          Text("调试控制台 (待开发)", style: TextStyle(color: colorScheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+
+    return DefaultTabController(
+      length: 2, // 标签数量
+      child: Column(
+        children: [
+          // --- 顶部标签栏区域 ---
+          Container(
+            height: 36, // 设定一个较小的高度，类似浏览器标签栏
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest, // 深色背景区分头部
+              border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TabBar(
+                    isScrollable: true, // 允许标签靠左排列，而不是撑满宽度
+                    tabAlignment: TabAlignment.start, // Flutter 3.13+ 支持，靠左对齐
+                    dividerColor: Colors.transparent, // 去掉默认的下划线分割
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 20),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    // 选中的样式：底部有粗线条，文字高亮
+                    indicator: UnderlineTabIndicator(
+                      borderSide: BorderSide(width: 3.0, color: colorScheme.primary),
+                    ),
+                    labelColor: colorScheme.primary,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    unselectedLabelColor: colorScheme.onSurfaceVariant,
+                    tabs: const [
+                      Tab(text: "变量监控"), // Tab 1
+                      Tab(text: "调试控制台"), // Tab 2
+                    ],
+                  ),
+                ),
+                // 可以在右侧加一些小工具按钮，比如“清空”、“导出”等
+                IconButton(
+                  icon: const Icon(Icons.more_horiz, size: 16),
+                  onPressed: () {},
+                  tooltip: "更多选项",
+                )
+              ],
+            ),
+          ),
+          
+          // --- 下方内容区域 ---
+          Expanded(
+            child: TabBarView(
+              physics: const NeverScrollableScrollPhysics(), 
+              children: [
+                const LowFreqWindow(), 
+                const DebugConsole(), // <--- 把原来的占位符替换成这个
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class ScopeDashboard extends StatefulWidget {
@@ -1127,6 +1211,140 @@ class _ChannelValueTileState extends State<ChannelValueTile> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+//流量监控
+class SerialTrafficMonitor extends StatefulWidget {
+  const SerialTrafficMonitor({super.key});
+
+  @override
+  State<SerialTrafficMonitor> createState() => _SerialTrafficMonitorState();
+}
+
+class _SerialTrafficMonitorState extends State<SerialTrafficMonitor> {
+  Timer? _timer;
+  
+  int _lastBytes = 0;
+  String _speedStr = "0 B/s";
+  double _loadPercent = 0.0;
+  Color _statusColor = Colors.grey;
+
+  @override
+  void initState() {
+    super.initState();
+    // 10Hz 刷新率 (100ms)
+    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) => _updateTraffic());
+  }
+
+  void _updateTraffic() {
+    if (!mounted) return;
+    final ctrl = context.read<DeviceController>();
+    
+    if (!ctrl.isConnected) {
+      if (_loadPercent != 0) {
+        setState(() {
+           _speedStr = "Offline";
+           _loadPercent = 0.0;
+           _statusColor = Colors.grey;
+        });
+      }
+      return;
+    }
+
+    // 1. 计算增量 (Delta)
+    final currentBytes = ctrl.totalRxBytes;
+    final deltaBytes = currentBytes - _lastBytes;
+    _lastBytes = currentBytes;
+
+    // 2. 计算速率 (Bytes per second)
+    // 因为是 100ms 采样一次，所以 1秒内的速率 = delta * 10
+    final bytesPerSec = deltaBytes * 10;
+    
+    // 3. 计算占用率 (Load Percentage)
+    // 串口理论模型：1 Byte ≈ 10 Bits (8数据位 + 1起始 + 1停止)
+    // 带宽 (Bytes/s) = BaudRate / 10
+    final baudRate = ctrl.selectedBaudRate;
+    final maxBytesPerSec = baudRate / 10.0;
+    
+    double percent = 0.0;
+    if (maxBytesPerSec > 0) {
+      percent = bytesPerSec / maxBytesPerSec;
+      if (percent > 1.0) percent = 1.0; // 理论上不应超过，除非缓冲区积压瞬间释放
+    }
+
+    // 4. 格式化文本
+    String newSpeedStr;
+    if (bytesPerSec > 1024) {
+      newSpeedStr = "${(bytesPerSec / 1024).toStringAsFixed(1)} KB/s";
+    } else {
+      newSpeedStr = "$bytesPerSec B/s";
+    }
+
+    // 5. 决定颜色 (负载越高颜色越深/越红)
+    Color newColor;
+    if (percent < 0.5) newColor = Colors.greenAccent;
+    else if (percent < 0.8) newColor = Colors.orangeAccent;
+    else newColor = Colors.redAccent;
+
+    // 6. 只有显示内容变化时才 setState (性能优化)
+    if (newSpeedStr != _speedStr || (percent - _loadPercent).abs() > 0.01) {
+      setState(() {
+        _speedStr = newSpeedStr;
+        _loadPercent = percent;
+        _statusColor = newColor;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 负载进度条图标
+          SizedBox(
+            width: 10,
+            height: 24,
+            child: Stack(
+              alignment: Alignment.bottomCenter,
+              children: [
+                Container(color: Colors.white10),
+                FractionallySizedBox(
+                  heightFactor: _loadPercent,
+                  child: Container(color: _statusColor),
+                )
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text("RX Load: ${(_loadPercent * 100).toStringAsFixed(0)}%", 
+                style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1)),
+              const SizedBox(height: 2),
+              Text(_speedStr, 
+                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace', height: 1)),
+            ],
           ),
         ],
       ),

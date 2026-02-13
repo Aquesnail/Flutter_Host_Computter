@@ -180,14 +180,14 @@ class _LowFreqWindow extends State<LowFreqWindow>{
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<DeviceController>(); //
+    //final controller = context.watch<DeviceController>(); //
     final colorScheme = Theme.of(context).colorScheme;
     
     // 定义状态相关的颜色
     // 当握手成功时，上半部分区域变亮（或变色），否则维持普通表面色
-    final registerAreaColor = controller.shakeHandSuccessful 
-        ? colorScheme.primaryContainer 
-        : colorScheme.surface;
+    // final registerAreaColor = controller.shakeHandSuccessful 
+    //     ? colorScheme.primaryContainer 
+    //     : colorScheme.surface;
 
     return Scaffold(
       body: Row(
@@ -227,7 +227,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                   // 核心优化 1：只监听 ID 列表的【顺序】和【内容】
                   // 如果数值改变但顺序没变，ReorderableListView 不会重建！
                   child: Selector<DeviceController, List<int>>(
-                    selector: (_, c) => c.registry.keys.toList(),
+                    selector: (_, c) => c.registry.keys.toList(),//通过selector达到只更新变量列表的目的
                     shouldRebuild: (prev, next) => !listEquals(prev, next), // 使用 listEquals 深度比较
                     builder: (context, keys, child) {
                       if (keys.isEmpty) {
@@ -237,6 +237,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                       return Theme(
                         data: Theme.of(context).copyWith(canvasColor: Colors.transparent),
                         child: ReorderableListView.builder(
+                          itemExtent: 60.0,
                           itemCount: keys.length,
                           onReorder: (oldIndex, newIndex) {
                             // 排序操作不需要 setState，直接调逻辑，Selector 会监测到 key 顺序变化自动刷新
@@ -342,67 +343,117 @@ class _LowFreqWindow extends State<LowFreqWindow>{
       );
   }
 }
-
-class MonitorListTile extends StatelessWidget {
+class MonitorListTile extends StatefulWidget {
   final int varId;
   final Function(RegisteredVar) onTap;
 
-  const MonitorListTile({super.key, required this.varId, required this.onTap});
+  const MonitorListTile({
+    super.key, 
+    required this.varId, 
+    required this.onTap
+  });
+
+  @override
+  State<MonitorListTile> createState() => _MonitorListTileState();
+}
+
+class _MonitorListTileState extends State<MonitorListTile> {
+  Timer? _refreshTimer;
+  
+  // 缓存显示用的字符串，避免浮点数微小波动导致无意义的重绘
+  String _valueDisplay = "0";
+  String _nameDisplay = "";
+  String _typeStr = "";
+  String _addrStr = "";
+
+  @override
+  void initState() {
+    super.initState();
+    
+    // 初始化一次数据，避免第一帧空白
+    _updateData();
+
+    // 启动 5Hz (200ms) 的采样定时器
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (mounted) _updateData();
+    });
+  }
+
+  void _updateData() {
+    // 1. 直接读取 controller (不使用 watch/select，完全不产生依赖)
+    final controller = context.read<DeviceController>();
+    final v = controller.registry[widget.varId];
+
+    if (v == null) return;
+
+    // 2. 格式化数据
+    final newValStr = v.value is double
+        ? (v.value as double).toStringAsFixed(3)
+        : v.value.toString();
+    
+    // 3. 只有当【显示内容】发生变化时才触发 setState
+    // 这样不仅限制了频率，还过滤了无效更新
+    if (newValStr != _valueDisplay || v.name != _nameDisplay) {
+      
+      // 这些静态信息通常不变，也可以放在这里惰性计算
+      final newTypeStr = v.type < VariableType.values.length
+            ? VariableType.values[v.type].displayName
+            : "Unknown";
+      final newAddrStr = v.addr.toRadixString(16).toUpperCase().padLeft(4, '0');
+
+      setState(() {
+        _valueDisplay = newValStr;
+        _nameDisplay = v.name;
+        _typeStr = newTypeStr;
+        _addrStr = newAddrStr;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // 核心优化 3：
-    // 这个组件只监听它自己那个 ID 对应的 RegisteredVar 对象
-    // 我们这里使用 select 监听几个关键字段的组合，因为 RegisteredVar 对象本身是可变的(Mutable)
-    // 如果直接 select 对象，Flutter 可能会因为对象引用没变而以为它没变。
-    // 所以最稳妥的是 select 出我们需要显示的具体数据。
-    
-    return Selector<DeviceController, RegisteredVar>(
-      selector: (_, c) => c.registry[varId]!,
-      // 只要值变了，或者类型配置变了，就重绘这一行
-      shouldRebuild: (prev, next) => (prev.value != next.value) || (prev.name != next.name),
-      builder: (context, v, _) {
-        final colorScheme = Theme.of(context).colorScheme;
-        
-        String typeStr = v.type < VariableType.values.length
-            ? VariableType.values[v.type].displayName
-            : "Unknown";
+    final colorScheme = Theme.of(context).colorScheme;
 
-        String valueDisplay = v.value is double
-            ? (v.value as double).toStringAsFixed(3)
-            : v.value.toString();
-
-        return ListTile(
-          dense: true,
-          leading: CircleAvatar(
-            radius: 14,
-            backgroundColor: colorScheme.secondaryContainer,
-            child: Text("${v.id}",
-                style: TextStyle(fontSize: 10, color: colorScheme.onSecondaryContainer)),
+    return ListTile(
+      dense: true,
+      // 使用 const 组件优化结构
+      leading: CircleAvatar(
+        radius: 14,
+        backgroundColor: colorScheme.secondaryContainer,
+        child: Text("${widget.varId}",
+            style: TextStyle(fontSize: 10, color: colorScheme.onSecondaryContainer)),
+      ),
+      title: Text(_nameDisplay, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(
+        "Addr: 0x$_addrStr | Type: $_typeStr",
+        style: const TextStyle(fontSize: 11),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _valueDisplay,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.primary,
+              fontFamily: 'monospace',
+            ),
           ),
-          title: Text(v.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text(
-            "Addr: 0x${v.addr.toRadixString(16).toUpperCase().padLeft(4, '0')} | Type: $typeStr",
-            style: const TextStyle(fontSize: 11),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                valueDisplay,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.primary,
-                  fontFamily: 'monospace',
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.drag_handle, size: 16, color: Colors.grey),
-            ],
-          ),
-          onTap: () => onTap(v),
-        );
+          const SizedBox(width: 8),
+          const Icon(Icons.drag_handle, size: 16, color: Colors.grey),
+        ],
+      ),
+      onTap: () {
+        // 获取最新的对象传给弹窗
+        final v = context.read<DeviceController>().registry[widget.varId];
+        if (v != null) widget.onTap(v);
       },
     );
   }
