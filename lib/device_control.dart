@@ -37,8 +37,11 @@ class DeviceController extends ChangeNotifier {
   final List<int> _rxBuffer = [];
   static const int MAX_BUFFER_SIZE = 1024 * 1024;
   //Log的缓冲，50条
-  final List<LogEntry> _recentLogs = [];
-  List<LogEntry> get recentLogs => List.unmodifiable(_recentLogs);
+  final List<LogEntry> _sysLogHistory = [];
+  static const int _maxSysLogHistory = 200;
+
+  final List<LogEntry> _dataLogHistory = [];
+  static const int _maxDataLogHistory = 100;
 
   String? _selectedPort;
   int _selectedBaudRate = 115200;
@@ -176,12 +179,32 @@ Future<bool> connect(String portName, int baudRate) async {
   void _addLog(LogType type, String content) {
     final entry = LogEntry(type, content);
     
-    // 广播出去 (通知 UI)
+    // A. 推流给 UI (实时显示)
     _logCtrl.add(entry); 
     
-    // 存入缓存
-    _recentLogs.add(entry);
-    if (_recentLogs.length > 50) _recentLogs.removeAt(0);
+    // B. 分类存入历史 (防止切 Tab 丢失)
+    if (type == LogType.info || type == LogType.error) {
+      // 存入系统日志列表
+      _sysLogHistory.add(entry);
+      if (_sysLogHistory.length > _maxSysLogHistory) {
+        _sysLogHistory.removeAt(0);
+      }
+    } else {
+      // 存入裸数据列表
+      _dataLogHistory.add(entry);
+      if (_dataLogHistory.length > _maxDataLogHistory) {
+        _dataLogHistory.removeAt(0);
+      }
+    }
+  }
+
+  // 4. 提供给 UI 的初始化获取方法：合并并按时间排序
+  List<LogEntry> get combinedHistory {
+    // 将两个列表合并
+    final List<LogEntry> merged = [..._sysLogHistory, ..._dataLogHistory];
+    // 重新按时间戳排序，保证 UI 显示顺序正确
+    merged.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return merged;
   }
 
   void sendData(Uint8List data) {

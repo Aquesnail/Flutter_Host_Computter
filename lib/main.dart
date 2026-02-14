@@ -9,6 +9,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import "lowfreq_window.dart";
 import "debug_console.dart";
+import "ring_buffer.dart";
 
 void main() {
   runApp(
@@ -396,7 +397,7 @@ class ScopeDashboard extends StatefulWidget {
 
 class _ScopeDashboardState extends State<ScopeDashboard> {
   // 存储高频数据点：ID -> List
-  Map<int, List<double>> multiChannelPoints = {};
+  Map<int, RingBuffer> multiChannelBuffers = {};
   
   StreamSubscription? _subscription;
   Timer? _refreshTimer; // UI 刷新定时器
@@ -432,13 +433,11 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
     // --- 核心优化 A: 接收数据不再 setState ---
     _subscription = controller.highFreqStream.listen((data) {
       // 仅在内存中操作数据，不通知 Flutter 重新 build
-      multiChannelPoints.putIfAbsent(data.key, () => []);
-      final points = multiChannelPoints[data.key]!;
-      points.add(data.value);
-      
-      if (points.length > _bufferSize) {
-        points.removeRange(0, points.length - _bufferSize); 
+      if (!multiChannelBuffers.containsKey(data.key)) {
+        // 这里会直接使用当前最新的 _bufferSize 创建新 RingBuffer
+        multiChannelBuffers[data.key] = RingBuffer(_bufferSize);
       }
+      multiChannelBuffers[data.key]!.add(data.value);
     });
 
     // --- 核心优化 B: 统一 UI 刷新频率 (60FPS) ---
@@ -462,20 +461,31 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
   // 更新配置的方法
   void _updateConfig() {
     setState(() {
+      // 1. 解析新大小
       int? newBuf = int.tryParse(_bufferCtrl.text);
-      if (newBuf != null && newBuf > 10) _bufferSize = newBuf;
       
+      // 2. 如果大小变了，执行 Resizing
+      if (newBuf != null && newBuf > 10 && newBuf != _bufferSize) {
+        _bufferSize = newBuf;
+        
+        // --- 核心修改：遍历所有已有的通道进行 Resize ---
+        for (var buffer in multiChannelBuffers.values) {
+          buffer.resize(_bufferSize);
+        }
+      }
+      
+      // 3. 解析 Delta Time
       double? newDt = double.tryParse(_dtCtrl.text);
       if (newDt != null && newDt > 0) _deltaTime = newDt;
     });
-    // 收起键盘
+    
     FocusScope.of(context).unfocus();
   }
   //清空缓冲区逻辑
   void _clearBuffer() {
     setState(() {
       // 1. 清空所有通道的数据
-      multiChannelPoints.clear();
+      multiChannelBuffers.clear();
       
       // 2. 更新 Key，强制 InteractiveScope 重建
       // 这样可以将 缩放(Scale) 和 偏移(Offset) 重置回初始值
@@ -508,7 +518,7 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
               // -----------------------------------------------------------
               Expanded(
                 child: InteractiveScope(
-                  dataPoints: multiChannelPoints,
+                  dataPoints: multiChannelBuffers,
                   varIds: highFreqVars.map((e) => e.id).toList(),
                   colors: colors,
                   deltaTime: _deltaTime, // <--- 传入这个关键参数
@@ -633,7 +643,7 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
   }
 }
 class InteractiveScope extends StatefulWidget {
-  final Map<int, List<double>> dataPoints;
+  final Map<int, RingBuffer> dataPoints;
   final List<int> varIds;
   final List<Color> colors;
   final double deltaTime;
@@ -890,7 +900,7 @@ void _handlePan(DragUpdateDetails details) {
 }
 
 class ProScopePainter extends CustomPainter {
-  final Map<int, List<double>> allPoints;
+  final Map<int, RingBuffer> allPoints;
   final List<int> ids;
   final List<Color> colors;
   
@@ -942,7 +952,7 @@ class ProScopePainter extends CustomPainter {
     for (int i = 0; i < ids.length; i++) {
       final id = ids[i];
       final points = allPoints[id];
-      if (points == null || points.isEmpty) continue;
+      if (points == null || points.length == 0) continue;
 
       final paint = Paint()
         ..color = colors[i % colors.length]
