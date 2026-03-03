@@ -279,23 +279,90 @@ Future<bool> connect(String portName, int baudRate) async {
       return;
     }
 
+    if (vid == 0xFC) {
+      int offset = 0;
+      
+      // 遍历解析整个 dataPart
+      while (offset < vlen && offset < dataPart.length) {
+        int id = dataPart[offset]; // 读取当前数据块的 ID
+        offset += 1;
+
+        // 安全检查：如果该 ID 还没注册，说明握手存在数据丢失，停止解析当前包
+        if (!registry.containsKey(id)) {
+          print("解析批量高频包错误: 遇到未注册的 ID $id");
+          break; 
+        }
+
+        final variable = registry[id]!;
+        int type = variable.type;
+        int varLen = _getVarLength(type); // 获取该变量应该占用的字节数
+
+        // 防止数组越界
+        if (offset + varLen > dataPart.length) break;
+
+        final bd = ByteData.sublistView(dataPart, offset, offset + varLen);
+        dynamic val = 0;
+
+        // 根据类型解析数值
+        if (varLen == 1) val = bd.getUint8(0);
+        else if (varLen == 2) val = bd.getUint16(0, Endian.big);
+        else if (varLen == 4) {
+          val = (type == 6) ? bd.getFloat32(0, Endian.big) : bd.getUint32(0, Endian.big);
+        }
+
+        // 更新内存并在流中广播
+        variable.value = val;
+        _highFreqDataCtrl.add(MapEntry(id, val.toDouble()));
+
+        // 步进到下一个变量
+        offset += varLen; 
+      }
+      return;
+    }
+
     // 元数据注册 (ID=0xFE)
     // 注意：下位机回传的 Type 字节也应该包含频率位
     if (vid == 0xFE) {
-      // 期望是 16 字节: ID(1) + RawType(1) + Addr(4) + Name(10)
       if (dataPart.length == 16) {
         int regId = dataPart[0];
         int regRawType = dataPart[1];
         
-        // 【修改点】解析 4 字节地址
         int regAddr = ByteData.sublistView(dataPart, 2, 6).getUint32(0, Endian.big);
         String name = ascii.decode(dataPart.sublist(6, 16), allowInvalid: true).split('\x00').first;
 
-        // 【修改点】拆解类型和频率
         int realType = regRawType & DebugProtocol.maskType;
         bool isHigh = (regRawType & DebugProtocol.maskFreq) != 0;
 
-        registry[regId] = RegisteredVar(regId, name, realType, regAddr, isHighFreq: isHigh);
+        bool isNew = !registry.containsKey(regId);
+        RegisteredVar newVar = RegisteredVar(regId, name, realType, regAddr, isHighFreq: isHigh);
+
+        if (isNew) {
+          if (isHigh) {
+            // 高频变量：直接追加到末尾
+            registry[regId] = newVar;
+          } else {
+            // 低频变量：找到现存第一个高频变量的位置，插到它前面
+            List<int> keys = registry.keys.toList();
+            int insertIndex = keys.indexWhere((k) => registry[k]!.isHighFreq);
+            
+            if (insertIndex == -1) {
+              // 还没有高频变量，直接放最后
+              registry[regId] = newVar;
+            } else {
+              // 插入并重建 Map 以保持顺序
+              keys.insert(insertIndex, regId);
+              final Map<int, RegisteredVar> tempMap = {};
+              for (var k in keys) {
+                tempMap[k] = k == regId ? newVar : registry[k]!;
+              }
+              registry.clear();
+              registry.addAll(tempMap);
+            }
+          }
+        } else {
+          // 已存在的变量直接更新
+          registry[regId] = newVar;
+        }
         notifyListeners();
       }
       return;
@@ -366,6 +433,18 @@ Future<bool> connect(String portName, int baudRate) async {
     registry.addAll(sortedMap);
 
     // 5. 通知 UI 刷新
+    notifyListeners();
+  }
+
+  int _getVarLength(int type) {
+    if (type == 0 || type == 1) return 1; // uint8, int8
+    if (type == 2 || type == 3) return 2; // uint16, int16
+    if (type >= 4 && type <= 6) return 4; // uint32, int32, float
+    return 0;
+  }
+
+  void clearRegistry() {
+    registry.clear();
     notifyListeners();
   }
 

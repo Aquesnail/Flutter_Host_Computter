@@ -202,25 +202,50 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                   color: colorScheme.surfaceContainerHighest,
                   width: double.infinity,
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // const Text("变量监控 (长按拖动排序)", 
-                      //   style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
-                      // // 可以在这里加一个分页指示器或搜索框
-                      // Text("共 ${controller.registry.length} 个变量", style: const TextStyle(fontSize: 12)), //不再依赖下面的setState更新，改为监听逻辑
-
-                      const Text("变量监控，长按拖动排序",
-                        style: TextStyle(fontWeight: FontWeight.bold,color: Colors.black54),
-                      ),
-                      Selector<DeviceController,int>(
-                        selector:(_,c) => c.registry.length,
-                        builder:(_,count,__)=>Text("共 $count 个变量", style: const TextStyle(fontSize:12)),
-                      )
-                      //当更新调用了notifylistener函数时，这个Selector执行selector:内部的函数
-                      //如果返回值发生了改变
-                      //它就对其builder内的函数进行重新构建
-                    ],
-                  ),
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("变量监控，长按拖动排序",
+                          style: TextStyle(fontWeight: FontWeight.bold,color: Colors.black54),
+                        ),
+                        Row(
+                          children: [
+                            Selector<DeviceController,int>(
+                              selector:(_,c) => c.registry.length,
+                              builder:(_,count,__)=>Text("共 $count 个变量", style: const TextStyle(fontSize:12)),
+                            ),
+                            const SizedBox(width: 8),
+                            // 新增的清空元数据按钮
+                            IconButton(
+                              icon: const Icon(Icons.delete_sweep, color: Colors.redAccent, size: 20),
+                              tooltip: "清空所有变量",
+                              constraints: const BoxConstraints(), // 减小按钮默认占用的内边距
+                              padding: const EdgeInsets.all(4),
+                              onPressed: () {
+                                // 弹窗确认，防止误触
+                                showDialog(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text("清空确认"),
+                                    content: const Text("确定要清空所有已注册的变量元数据吗？"),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                                        onPressed: () {
+                                          context.read<DeviceController>().clearRegistry();
+                                          Navigator.pop(ctx);
+                                        },
+                                        child: const Text("清空"),
+                                      )
+                                    ],
+                                  )
+                                );
+                              },
+                            )
+                          ],
+                        )
+                      ],
+                    ),
                 ),
                 
                Expanded(
