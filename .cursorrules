@@ -1,0 +1,61 @@
+# Flutter Host Computer Debug Tool - Cursor Rules
+
+## 项目概述
+Flutter 桌面应用，通过串口与 MCU 通信，实现调试/示波器功能。
+
+## 代码风格
+- 保持简洁，避免过度工程化
+- 优先使用显式类型，复杂类型用 `final` 推断
+- 类/方法添加简洁注释，解释"为什么"而非"做什么"
+- 避免不必要的空行，保持代码紧凑
+
+## 状态管理规范
+- 使用 Provider + ChangeNotifier 管理全局状态
+- **不要所有地方都用 notifyListeners()**
+  - UI 配置变更（端口选择、波特率等）→ 使用 notifyListeners()
+  - 高频数据更新 → 必须使用 Stream，禁止 notifyListeners()
+  - 低频数据更新 → 默认静默更新，需要显式通知时才调用 notifyListeners()
+
+## 数据传输策略
+根据数据量和频率选择传输方式：
+
+1. **Stream 方式**（数据量大或高频）
+   - 示波器高频采样数据
+   - 日志实时流
+   - 批量数据上报
+   - 实现：使用 StreamController.broadcast() + 监听者模式
+
+2. **Silent Update**（低频或配置数据）
+   - 变量值静默更新
+   - 注册表变更
+   - 状态标志位
+   - UI 需要时主动读取，或通过暴露的 ValueNotifier 监听
+
+## Dart 异步最佳实践
+- 异步方法返回 Future<T>，明确类型
+- 使用 Completer 处理一次性异步结果（如握手响应）
+- 使用 Stream 处理持续性数据流
+- 及时关闭 StreamController，dispose 中清理
+- 避免 async/await 嵌套过深，提前返回简化逻辑
+- 超时处理使用 `future.timeout(Duration)`
+
+## 串口通信规范
+- 数据接收在 isolate 回调中处理，保持轻量
+- 协议解析使用滑动窗口，避免频繁内存分配
+- 大数据包分包处理，防止缓冲区溢出
+- CRC 校验失败时丢弃整包，不尝试恢复
+
+## 修改前确认
+**每次修改代码前，必须先向用户说明：**
+1. 修改的目标是什么
+2. 选择的方案及理由
+3. 可能影响的范围
+4. 纠错优先：如果你认为我的方案会影响串口通信稳定性，请直接指出。
+
+等待用户确认后再执行代码变更。
+
+## 文件组织
+- `debug_protocol.dart`: 协议编解码，纯函数，无状态
+- `device_control.dart`: 串口管理与状态机
+- `ring_buffer.dart`: 环形缓冲区，高频数据缓存
+- UI 组件按功能分文件，避免单个文件过大

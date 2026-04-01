@@ -12,9 +12,11 @@ class RegisteredVar {
   final int type; // 纯类型 (0-6)
   final int addr;
   final bool isHighFreq; // 是否高频
+  final bool isStatic; // 是否静态变量（不主动刷新）
   dynamic value;
 
-  RegisteredVar(this.id, this.name, this.type, this.addr, {this.value = 0, this.isHighFreq = false});
+  RegisteredVar(this.id, this.name, this.type, this.addr,
+      {this.value = 0, this.isHighFreq = false, this.isStatic = false});
 }
 
 class DeviceController extends ChangeNotifier {
@@ -321,30 +323,32 @@ Future<bool> connect(String portName, int baudRate) async {
     }
 
     // 元数据注册 (ID=0xFE)
-    // 注意：下位机回传的 Type 字节也应该包含频率位
+    // 注意：下位机回传的 Type 字节也应该包含频率位和静态位
     if (vid == 0xFE) {
       if (dataPart.length == 16) {
         int regId = dataPart[0];
         int regRawType = dataPart[1];
-        
+
         int regAddr = ByteData.sublistView(dataPart, 2, 6).getUint32(0, Endian.big);
         String name = ascii.decode(dataPart.sublist(6, 16), allowInvalid: true).split('\x00').first;
 
         int realType = regRawType & DebugProtocol.maskType;
         bool isHigh = (regRawType & DebugProtocol.maskFreq) != 0;
+        bool isStatic = (regRawType & DebugProtocol.maskStatic) != 0;
 
         bool isNew = !registry.containsKey(regId);
-        RegisteredVar newVar = RegisteredVar(regId, name, realType, regAddr, isHighFreq: isHigh);
+        RegisteredVar newVar = RegisteredVar(regId, name, realType, regAddr,
+            isHighFreq: isHigh, isStatic: isStatic);
 
         if (isNew) {
           if (isHigh) {
             // 高频变量：直接追加到末尾
             registry[regId] = newVar;
           } else {
-            // 低频变量：找到现存第一个高频变量的位置，插到它前面
+            // 低频/静态变量：找到现存第一个高频变量的位置，插到它前面
             List<int> keys = registry.keys.toList();
             int insertIndex = keys.indexWhere((k) => registry[k]!.isHighFreq);
-            
+
             if (insertIndex == -1) {
               // 还没有高频变量，直接放最后
               registry[regId] = newVar;
@@ -446,6 +450,11 @@ Future<bool> connect(String portName, int baudRate) async {
   void clearRegistry() {
     registry.clear();
     notifyListeners();
+  }
+
+  // 发送静态变量刷新请求
+  void requestStaticRefresh(int varId) {
+    sendData(DebugProtocol.packStaticRefreshCmd(varId));
   }
 
   void dispose(){

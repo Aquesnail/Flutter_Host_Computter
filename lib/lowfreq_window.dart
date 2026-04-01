@@ -40,80 +40,95 @@ class _LowFreqWindow extends State<LowFreqWindow>{
 
     int selectedVarType=0;
     bool isHighFreq = false;
+    bool isStatic = false;
 
     final List<String> typeLabels = ["Uint8", "Int8", "Uint16", "Int16", "Uint32", "Int32", "Float"];
 
     showDialog(
       context: context,
-      builder: (Diactx) => AlertDialog(//这里直接现写一个构造函数，所以匿名函数参量和前面不一样
-        title: Text("注册变量"),
-        content: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller:nameCtrl,
-              decoration: const InputDecoration(labelText: "变量名称(Max 10 chars)"),
-              maxLength: 10,
+      builder: (Diactx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text("注册变量"),
+          content: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller:nameCtrl,
+                decoration: const InputDecoration(labelText: "变量名称(Max 10 chars)"),
+                maxLength: 10,
+              ),
+              const SizedBox(height: 10,),
+              TextField(
+                controller: addrCtrl,
+                decoration: const InputDecoration(labelText: "地址 (Hex, 4字节 e.g. 20000000)"),
+              ),
+              const SizedBox(height: 10,),
+              DropdownButtonFormField<int>(
+                value: selectedVarType,
+                isExpanded: true,
+                items: List.generate(7, (index) {
+                  return DropdownMenuItem(
+                    value:index,
+                    child: Text("$index: ${typeLabels[index]}")
+                  );
+                }),
+                onChanged: (v) => setState(() => selectedVarType = v!),
+              ),
+              SwitchListTile(
+                title: const Text("高频信号 (波形显示)"),
+                subtitle: const Text("开启后置位 Type 第4位"),
+                value: isHighFreq,
+                onChanged: isStatic ? null : (v) => setState(() => isHighFreq = v),
+              ),
+              SwitchListTile(
+                title: const Text("静态变量 (不自动刷新)"),
+                subtitle: const Text("开启后置位 Type 第5位，需手动刷新"),
+                value: isStatic,
+                onChanged: (v) => setState(() {
+                  isStatic = v;
+                  if (isStatic) isHighFreq = false; // 静态变量不能是高频
+                }),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: ()=> Navigator.pop(Diactx),
+              child: const Text("取消"),
             ),
-            const SizedBox(height: 10,),
-            TextField(
-              controller: addrCtrl,
-              decoration: const InputDecoration(labelText: "地址 (Hex, 4字节 e.g. 20000000)"),
-            ),
-            const SizedBox(height: 10,),
-            DropdownButtonFormField<int>(
-              items: List.generate(7, (index) {
-                return DropdownMenuItem(
-                  value:index,
-                  child: Text("$index: ${typeLabels[index]}")
-                );
-              }),
-              onChanged: (v) => setState(()=> selectedVarType = v!),
-            ),
-            SwitchListTile(
-              title: const Text("高频信号 (波形显示)"),
-              subtitle: const Text("开启后置位 Type 第4位"),
-              value: isHighFreq,
-              onChanged: (v) => setState(() => isHighFreq = v),
-            ),
+            ElevatedButton(
+              onPressed: (){
+                try {
+                  String name = nameCtrl.text.trim();
+                  if (name.isEmpty) throw "名字不能为空";
+
+                  String addrStr = addrCtrl.text.trim();
+                  if (addrStr.startsWith("0x") || addrStr.startsWith("0X")) addrStr = addrStr.substring(2);
+                  if (addrStr.isEmpty) throw "地址不能为空";
+
+                  int addr = int.parse(addrStr, radix: 16);
+
+                  // 发送注册指令
+                  final controller = context.read<DeviceController>();
+                  controller.sendData(DebugProtocol.packRegisterCmd(
+                    addr,
+                    name,
+                    selectedVarType,
+                    isHighFreq: isHighFreq,
+                    isStatic: isStatic
+                  ));
+
+                  Navigator.pop(Diactx);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("注册请求发送: $name")));
+                } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("错误: $e"), backgroundColor: Colors.red));
+                }
+              },
+              child:const Text("注册"),
+            )
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: ()=> Navigator.pop(Diactx),
-            child: const Text("取消"),
-          ),
-          ElevatedButton(
-            onPressed: (){
-              try {
-                String name = nameCtrl.text.trim();
-                if (name.isEmpty) throw "名字不能为空";
-
-                String addrStr = addrCtrl.text.trim();
-                if (addrStr.startsWith("0x") || addrStr.startsWith("0X")) addrStr = addrStr.substring(2);
-                if (addrStr.isEmpty) throw "地址不能为空";
-                
-                int addr = int.parse(addrStr, radix: 16);
-
-                // 发送注册指令 [修改后的调用]
-                final controller = context.read<DeviceController>();
-                controller.sendData(DebugProtocol.packRegisterCmd(
-                  addr, // 4字节地址
-                  name, 
-                  selectedVarType, 
-                  isHighFreq: isHighFreq // 传入高频标志
-                ));
-
-                Navigator.pop(Diactx);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("注册请求发送: $name")));
-              } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("错误: $e"), backgroundColor: Colors.red));
-              }
-            },
-            child:const Text("注册"),
-          )
-        ],
       )
     );
   }
@@ -384,17 +399,19 @@ class MonitorListTile extends StatefulWidget {
 
 class _MonitorListTileState extends State<MonitorListTile> {
   Timer? _refreshTimer;
-  
+
   // 缓存显示用的字符串，避免浮点数微小波动导致无意义的重绘
   String _valueDisplay = "0";
   String _nameDisplay = "";
   String _typeStr = "";
   String _addrStr = "";
+  bool _isStatic = false;
+  bool _isHighFreq = false;
 
   @override
   void initState() {
     super.initState();
-    
+
     // 初始化一次数据，避免第一帧空白
     _updateData();
 
@@ -415,11 +432,14 @@ class _MonitorListTileState extends State<MonitorListTile> {
     final newValStr = v.value is double
         ? (v.value as double).toStringAsFixed(3)
         : v.value.toString();
-    
+
     // 3. 只有当【显示内容】发生变化时才触发 setState
     // 这样不仅限制了频率，还过滤了无效更新
-    if (newValStr != _valueDisplay || v.name != _nameDisplay) {
-      
+    if (newValStr != _valueDisplay ||
+        v.name != _nameDisplay ||
+        v.isStatic != _isStatic ||
+        v.isHighFreq != _isHighFreq) {
+
       // 这些静态信息通常不变，也可以放在这里惰性计算
       final newTypeStr = v.type < VariableType.values.length
             ? VariableType.values[v.type].displayName
@@ -431,8 +451,21 @@ class _MonitorListTileState extends State<MonitorListTile> {
         _nameDisplay = v.name;
         _typeStr = newTypeStr;
         _addrStr = newAddrStr;
+        _isStatic = v.isStatic;
+        _isHighFreq = v.isHighFreq;
       });
     }
+  }
+
+  void _requestRefresh() {
+    final controller = context.read<DeviceController>();
+    controller.requestStaticRefresh(widget.varId);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("请求刷新 $_nameDisplay..."),
+        duration: const Duration(seconds: 1),
+      ),
+    );
   }
 
   @override
@@ -445,16 +478,56 @@ class _MonitorListTileState extends State<MonitorListTile> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    // 根据变量类型设置不同的颜色
+    Color typeColor = colorScheme.secondaryContainer;
+    if (_isHighFreq) {
+      typeColor = Colors.orange.withValues(alpha: 0.3);
+    } else if (_isStatic) {
+      typeColor = Colors.purple.withValues(alpha: 0.3);
+    }
+
     return ListTile(
       dense: true,
       // 使用 const 组件优化结构
       leading: CircleAvatar(
         radius: 14,
-        backgroundColor: colorScheme.secondaryContainer,
+        backgroundColor: typeColor,
         child: Text("${widget.varId}",
             style: TextStyle(fontSize: 10, color: colorScheme.onSecondaryContainer)),
       ),
-      title: Text(_nameDisplay, style: const TextStyle(fontWeight: FontWeight.bold)),
+      title: Row(
+        children: [
+          Text(_nameDisplay, style: const TextStyle(fontWeight: FontWeight.bold)),
+          if (_isStatic)
+            Container(
+              margin: const EdgeInsets.only(left: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.purple.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.purple.withValues(alpha: 0.5)),
+              ),
+              child: const Text(
+                "STATIC",
+                style: TextStyle(fontSize: 9, color: Colors.purple, fontWeight: FontWeight.bold),
+              ),
+            ),
+          if (_isHighFreq)
+            Container(
+              margin: const EdgeInsets.only(left: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+              ),
+              child: const Text(
+                "HIGH",
+                style: TextStyle(fontSize: 9, color: Colors.orange, fontWeight: FontWeight.bold),
+              ),
+            ),
+        ],
+      ),
       subtitle: Text(
         "Addr: 0x$_addrStr | Type: $_typeStr",
         style: const TextStyle(fontSize: 11),
@@ -467,11 +540,19 @@ class _MonitorListTileState extends State<MonitorListTile> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: colorScheme.primary,
+              color: _isStatic ? Colors.purple : colorScheme.primary,
               fontFamily: 'monospace',
             ),
           ),
-          const SizedBox(width: 8),
+          if (_isStatic)
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 18, color: Colors.purple),
+              tooltip: "刷新静态变量",
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
+              onPressed: _requestRefresh,
+            ),
+          const SizedBox(width: 4),
           const Icon(Icons.drag_handle, size: 16, color: Colors.grey),
         ],
       ),

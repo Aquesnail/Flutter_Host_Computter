@@ -8,7 +8,8 @@ enum VariableType {
   }
 
 class DebugProtocol {
-  static const int maskFreq = 0x10; // 第4位 (0001 0000)
+  static const int maskFreq = 0x10; // 第4位 (0001 0000) - 高频标志
+  static const int maskStatic = 0x20; // 第5位 (0010 0000) - 静态变量标志
   static const int maskType = 0x0F; // 低4位 (0000 1111) 用于原始类型
 
   // --- CRC16-MODBUS ---
@@ -74,14 +75,18 @@ class DebugProtocol {
   }
 
   // --- 2. 构建动态注册指令 (CMD 0x56) ---
-  // 【修改点】移除 memType，地址改为 4 字节，增加 isHighFreq
-  static Uint8List packRegisterCmd(int address, String name, int varType, {bool isHighFreq = false}) {
+  // 【修改点】移除 memType，地址改为 4 字节，增加 isHighFreq 和 isStatic
+  static Uint8List packRegisterCmd(int address, String name, int varType,
+      {bool isHighFreq = false, bool isStatic = false}) {
     final inner = BytesBuilder();
-    
-    // 组合 Type 和 Freq 标志
+
+    // 组合 Type、Freq 标志和 Static 标志
     int typeByte = (varType & maskType);
     if (isHighFreq) {
       typeByte |= maskFreq; // 置位第4位
+    }
+    if (isStatic) {
+      typeByte |= maskStatic; // 置位第5位
     }
     inner.addByte(typeByte);
 
@@ -110,5 +115,11 @@ class DebugProtocol {
 
   static Uint8List packHandshake() {
     return _finalizeFrame(0x00, [0xDE, 0xAD, 0xBE, 0xEF]);
+  }
+
+  // --- 3. 构建请求刷新静态变量指令 (CMD 0x58) ---
+  // 上位机发送此指令请求下位机发送指定静态变量的当前值
+  static Uint8List packStaticRefreshCmd(int varId) {
+    return _finalizeFrame(0x58, [varId]);
   }
 }
