@@ -179,8 +179,12 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                 final controller = context.read<DeviceController>();
                 controller.sendData(DebugProtocol.packWriteCmd(v.id, len,newVal, v.type));
 
+                // 如果是静态变量，自动请求刷新以获取更新后的值
+                if (v.isStatic) {
+                  controller.requestStaticRefresh(v.id);
+                }
+
                 Navigator.pop(Diactx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("指令已经发送")));
 
               } catch(e){
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("数值格式错误: $e"), backgroundColor: Colors.red));
@@ -225,7 +229,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                         Row(
                           children: [
                             Selector<DeviceController,int>(
-                              selector:(_,c) => c.registry.length,
+                              selector:(_,c) => c.registry.values.where((v) => !v.isStatic).length,
                               builder:(_,count,__)=>Text("共 $count 个变量", style: const TextStyle(fontSize:12)),
                             ),
                             const SizedBox(width: 8),
@@ -267,7 +271,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                   // 核心优化 1：只监听 ID 列表的【顺序】和【内容】
                   // 如果数值改变但顺序没变，ReorderableListView 不会重建！
                   child: Selector<DeviceController, List<int>>(
-                    selector: (_, c) => c.registry.keys.toList(),//通过selector达到只更新变量列表的目的
+                    selector: (_, c) => c.registry.values.where((v) => !v.isStatic).map((v) => v.id).toList(),
                     shouldRebuild: (prev, next) => !listEquals(prev, next), // 使用 listEquals 深度比较
                     builder: (context, keys, child) {
                       if (keys.isEmpty) {
@@ -282,7 +286,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                           onReorder: (oldIndex, newIndex) {
                             // 排序操作不需要 setState，直接调逻辑，Selector 会监测到 key 顺序变化自动刷新
                             if (newIndex > oldIndex) newIndex -= 1;
-                            context.read<DeviceController>().reorderRegistry(oldIndex, newIndex);
+                            context.read<DeviceController>().reorderNonStaticVars(oldIndex, newIndex);
                           },
                           itemBuilder: (ctx, index) {
                             final id = keys[index];
@@ -460,12 +464,6 @@ class _MonitorListTileState extends State<MonitorListTile> {
   void _requestRefresh() {
     final controller = context.read<DeviceController>();
     controller.requestStaticRefresh(widget.varId);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("请求刷新 $_nameDisplay..."),
-        duration: const Duration(seconds: 1),
-      ),
-    );
   }
 
   @override

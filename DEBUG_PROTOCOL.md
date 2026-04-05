@@ -104,12 +104,14 @@ Uint8List frame = DebugProtocol.packWriteCmd(3, 4, 3.14, 6);
 **类型字节编码：**
 - 低4位 (maskType=0x0F): 变量类型值 (0-6)
 - 第4位 (maskFreq=0x10): 高频刷新标志 (1=高频，0=低频)
+- 第5位 (maskStatic=0x20): 静态变量标志 (1=静态，0=普通)
 
 **参数说明：**
 - `address`: 变量内存地址 (32位)
 - `name`: 变量名称 (ASCII字符串，最长10字符)
 - `varType`: 变量类型值 (0-6)
 - `isHighFreq`: 是否为高频变量 (默认false)
+- `isStatic`: 是否为静态变量 (默认false)
 
 **使用方式：**
 ```dart
@@ -118,6 +120,9 @@ Uint8List frame = DebugProtocol.packRegisterCmd(0x20001000, "speed", 2);
 
 // 注册一个高频float变量
 Uint8List frame = DebugProtocol.packRegisterCmd(0x20002000, "voltage", 6, isHighFreq: true);
+
+// 注册一个静态变量
+Uint8List frame = DebugProtocol.packRegisterCmd(0x20003000, "config", 0, isStatic: true);
 ```
 
 ### 4. 文本命令 (CMD: 0x57)
@@ -133,11 +138,30 @@ Uint8List frame = DebugProtocol.packRegisterCmd(0x20002000, "voltage", 6, isHigh
 Uint8List frame = DebugProtocol.packTextCmd("Hello Device!");
 ```
 
+### 5. 请求刷新静态变量命令 (CMD: 0x58)
+
+上位机发送此指令请求下位机发送指定静态变量的当前值。
+
+**请求帧格式：**
+- 命令字：0x58
+- 内部载荷：
+  - 字节0：变量ID
+
+**参数说明：**
+- `varId`: 要刷新的静态变量标识符 (0-255)
+
+**使用方式：**
+```dart
+// 请求刷新ID为5的静态变量
+Uint8List frame = DebugProtocol.packStaticRefreshCmd(5);
+```
+
 ## 协议常量
 
 | 常量名 | 值 | 描述 |
 |--------|-----|------|
 | maskFreq | 0x10 (0001 0000) | 高频标志掩码 (第4位) |
+| maskStatic | 0x20 (0010 0000) | 静态变量标志掩码 (第5位) |
 | maskType | 0x0F (0000 1111) | 类型掩码 (低4位) |
 
 ## 使用示例
@@ -150,18 +174,86 @@ Uint8List handshakeFrame = DebugProtocol.packHandshake();
 
 // 2. 注册变量
 Uint8List registerFrame = DebugProtocol.packRegisterCmd(
-  0x20001000, 
-  "motor_speed", 
+  0x20001000,
+  "motor_speed",
   2,  // uint16
   isHighFreq: true
 );
 
-// 3. 修改变量值
+// 3. 注册静态变量
+Uint8List staticVarFrame = DebugProtocol.packRegisterCmd(
+  0x20002000,
+  "threshold",
+  4,  // uint32
+  isStatic: true
+);
+
+// 4. 修改变量值
 Uint8List writeFrame = DebugProtocol.packWriteCmd(1, 2, 1500, 2); // uint16=1500
 
-// 4. 发送文本
+// 5. 请求刷新静态变量
+Uint8List refreshFrame = DebugProtocol.packStaticRefreshCmd(2);
+
+// 6. 发送文本
 Uint8List textFrame = DebugProtocol.packTextCmd("System ready");
 ```
+
+## 变量分类与行为
+
+注册后的变量根据标志位分为三类，具有不同的数据刷新行为：
+
+| 类型 | 高频标志 | 静态标志 | 行为描述 |
+|------|---------|---------|---------|
+| 高频变量 | 1 (第4位置位) | 0 | 下位机以固定周期批量发送，用于波形显示 |
+| 低频变量 | 0 | 0 | 值变化时由下位机主动推送，用于一般监控 |
+| 静态变量 | 0 | 1 (第5位置位) | **不自动刷新**，需上位机发送 0x58 命令请求 |
+
+**静态变量使用场景：**
+- 配置参数（如校准系数、阈值设定）
+- 不常变化的状态（如设备型号、固件版本）
+- 需要避免频繁传输的常量数据
+
+**注意事项：**
+- 静态变量与高频标志互斥，设置 `isStatic=true` 时自动禁用高频
+- 静态变量的值不会自动更新，需要调用 `packStaticRefreshCmd()` 主动请求
+
+## 下位机数据上报格式
+
+### 普通变量值上报 (VID ≠ 0xFC, 0xFD, 0xFE, 0xFF)
+
+下位机主动推送变量值时使用以下格式：
+
+| 字节位置 | 长度 | 描述 |
+|---------|------|------|
+| 0 | 1 | 帧起始符：0xAA |
+| 1 | 1 | 变量ID (VID) |
+| 2 | 1 | 原始类型字节（含频率/静态标志） |
+| 3 | 1 | 数据长度 (1/2/4) |
+| 4 ~ 4+N-1 | N | 变量值数据 |
+| 4+N ~ 4+N+1 | 2 | CRC16校验 |
+
+### 批量高频数据上报 (VID = 0xFC)
+
+下位机以固定周期批量发送所有高频变量的当前值：
+
+| 字节位置 | 描述 |
+|---------|------|
+| 0 | 0xAA (帧头) |
+| 1 | 0xFC (批量高频包ID) |
+| 2 | 原始类型字节 |
+| 3 | 后续数据总长度 |
+| 4+ | 数据块序列：[ID1, Data1..., ID2, Data2...] |
+
+### 元数据注册确认 (VID = 0xFE)
+
+下位机回复变量注册成功：
+
+| 字节位置 | 长度 | 描述 |
+|---------|------|------|
+| 4 | 1 | 分配的变量ID |
+| 5 | 1 | 原始类型字节（含标志位） |
+| 6-9 | 4 | 内存地址 (大端序) |
+| 10-19 | 10 | 变量名 (ASCII，不足补0) |
 
 ## 注意事项
 
@@ -170,8 +262,11 @@ Uint8List textFrame = DebugProtocol.packTextCmd("System ready");
 3. 文本命令最大长度为60字节
 4. CRC校验采用MODBUS算法
 5. 高频变量标志用于优化数据传输频率
+6. 静态变量需要手动刷新，适合存储配置类数据
 
 ## 版本历史
 
 - 动态注册命令 (0x56) 已移除memType参数，地址扩展为4字节
-- 类型字节现在包含高频刷新标志位
+- 类型字节现在包含高频刷新标志位 (第4位)
+- 类型字节新增静态变量标志位 (第5位)，支持 `isStatic` 参数
+- 新增请求刷新静态变量命令 (0x58)
