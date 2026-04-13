@@ -15,12 +15,7 @@ class HandshakeButton extends StatelessWidget {
           ? () async {
               bool success = await context.read<DeviceController>().shakeWithMCU();
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(success ? "握手成功!" : "握手失败或超时"),
-                    backgroundColor: success ? Colors.green : Colors.red,
-                  ),
-                );
+                
               }
             }
           : null,

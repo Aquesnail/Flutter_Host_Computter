@@ -59,3 +59,5 @@ Flutter 桌面应用，通过串口与 MCU 通信，实现调试/示波器功能
 - `device_control.dart`: 串口管理与状态机
 - `ring_buffer.dart`: 环形缓冲区，高频数据缓存
 - UI 组件按功能分文件，避免单个文件过大
+
+每次修改完之后，对根目录下的API_Spec.md，Architecture.md两个文档进行更新
