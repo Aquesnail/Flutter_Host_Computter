@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
@@ -42,6 +43,13 @@ class DeviceController extends ChangeNotifier {
   //用于统计串口速率
   int _totalRxBytes = 0;
   int get totalRxBytes => _totalRxBytes;
+
+  // --- Demo Mode ---
+  bool _demoModeActive = false;
+  bool get demoModeActive => _demoModeActive;
+  Timer? _demoTimer;
+  double _demoTime = 0;
+  int _demoTick = 0;
 
   set selectedPort(String? v) {
     //改变数值以后，调用这个方法，广播给监听这个类的各个函数
@@ -443,6 +451,78 @@ class DeviceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Demo Mode ---
+  void toggleDemoMode() {
+    if (_demoModeActive) {
+      _stopDemoData();
+    } else {
+      _startDemoData();
+    }
+  }
+
+  void _startDemoData() {
+    _stopDemoData();
+    _demoTime = 0;
+    _demoTick = 0;
+
+    // 注册高频变量（示波器用）
+    registry[1] = RegisteredVar(1, "sine", 6, 0x20001000, isHighFreq: true);
+    registry[2] = RegisteredVar(2, "cosine", 6, 0x20001004, isHighFreq: true);
+    registry[3] = RegisteredVar(3, "saw", 6, 0x20001008, isHighFreq: true);
+
+    // 注册低频变量（监控列表用）
+    registry[4] = RegisteredVar(4, "counter", 2, 0x20002000);
+    registry[5] = RegisteredVar(5, "temp", 3, 0x20002002);
+
+    // 注册静态变量（静态面板用）
+    registry[6] = RegisteredVar(6, "version", 4, 0x20003000, isStatic: true);
+    registry[7] = RegisteredVar(7, "threshold", 6, 0x20003004, isStatic: true);
+    registry[6]!.value = 0x00010203;
+    registry[7]!.value = 3.14159;
+
+    _demoModeActive = true;
+    notifyListeners();
+
+    _demoTimer = Timer.periodic(const Duration(milliseconds: 20), (_) {
+      _demoTime += 0.02;
+      _demoTick++;
+
+      final sine = sin(_demoTime * 2) * 100.0;
+      final cosine = cos(_demoTime * 2) * 100.0;
+      final saw = ((_demoTime % 2.0) - 1.0) * 50.0;
+
+      registry[1]!.value = sine;
+      registry[2]!.value = cosine;
+      registry[3]!.value = saw;
+
+      _highFreqDataCtrl.add(MapEntry(1, sine));
+      _highFreqDataCtrl.add(MapEntry(2, cosine));
+      _highFreqDataCtrl.add(MapEntry(3, saw));
+
+      if (_demoTick % 25 == 0) {
+        final counter = (_demoTick ~/ 25) % 65536;
+        final temp = (25 + sin(_demoTime / 10) * 5).toInt();
+
+        registry[4]!.value = counter;
+        registry[5]!.value = temp;
+
+        if (_demoTick % 100 == 0) {
+          _addLog(LogType.info, "Demo: tick=$_demoTick, temp=$temp");
+        }
+
+        notifyListeners();
+      }
+    });
+  }
+
+  void _stopDemoData() {
+    _demoTimer?.cancel();
+    _demoTimer = null;
+    _demoModeActive = false;
+    registry.clear();
+    notifyListeners();
+  }
+
   // 发送静态变量刷新请求
   void requestStaticRefresh(int varId) {
     sendData(DebugProtocol.packStaticRefreshCmd(varId));
@@ -488,6 +568,7 @@ class DeviceController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _demoTimer?.cancel();
     _logCtrl.close();
     super.dispose();
   }

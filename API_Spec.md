@@ -87,6 +87,7 @@ enum VariableType { uint8, int8, uint16, int16, uint32, int32, float }
 | `totalRxBytes` | `int` | 累计接收字节数（用于流量统计） |
 | `registry` | `Map<int, RegisteredVar>` | 已注册变量字典（按插入/排序顺序保留） |
 | `combinedHistory` | `List<LogEntry>` | 合并并按时间排序的历史日志 |
+| `demoModeActive` | `bool` | Demo 测试模式是否正在运行 |
 
 #### Stream
 | 名称 | 类型 | 说明 |
@@ -107,6 +108,7 @@ enum VariableType { uint8, int8, uint16, int16, uint32, int32, float }
 | `reorderNonStaticVars` | `void reorderNonStaticVars(int oldIndex, int newIndex)` | 仅调整非静态变量的显示顺序（用于 LowFreqWindow） |
 | `clearRegistry` | `void clearRegistry()` | 清空所有已注册的变量元数据 |
 | `requestStaticRefresh` | `void requestStaticRefresh(int varId)` | 发送指定静态变量的刷新请求 |
+| `toggleDemoMode` | `void toggleDemoMode()` | 切换 Demo 测试模式：启动时自动注册模拟变量并生成 50Hz 数据流，停止时清空变量 |
 | `dispose` | `@override void dispose()` | 关闭 `logStream` 并调用父类 dispose |
 
 ---
@@ -144,7 +146,7 @@ class MyApp extends StatelessWidget
 ```dart
 class MainWindow extends StatelessWidget
 ```
-- 职责：顶部工具栏（串口选择、连接、握手、状态面板）。
+- 职责：顶部工具栏（串口选择、连接、握手、状态面板、Demo 测试数据按钮）。
 
 #### `LayoutDashboard` (`ui/dashboard/layout_dashboard.dart`)
 ```dart

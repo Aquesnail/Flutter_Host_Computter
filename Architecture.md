@@ -14,7 +14,7 @@
 
 | 文件 | 职责 |
 |------|------|
-| `core/services/device_controller.dart` | 唯一的状态管理器，继承 `ChangeNotifier`。负责串口生命周期、协议解析、变量注册表 (`registry`)、日志缓存、握手状态。 |
+| `core/services/device_controller.dart` | 唯一的状态管理器，继承 `ChangeNotifier`。负责串口生命周期、协议解析、变量注册表 (`registry`)、日志缓存、握手状态，以及 Demo 测试数据模式。 |
 | `core/models/registered_var.dart` | 变量元数据模型 `RegisteredVar`。 |
 | `core/models/log_entry.dart` | 日志模型 `LogEntry` 与枚举 `LogType`。 |
 
@@ -149,7 +149,33 @@ MainWindow (AppBar 区域)
 
 ---
 
-## 5. 模块目录结构（模块化后）
+## 5. Demo 测试模式
+
+### 5.1 功能概述
+Demo 模式是一种**离线调试**机制，无需连接真实串口即可模拟下位机数据，用于快速验证上位机 UI 各面板（示波器、变量监控、静态变量、调试控制台）是否正常工作。
+
+### 5.2 数据来源
+- `DeviceController._demoTimer` 以 **50Hz** 周期生成模拟数据
+- 高频变量：正弦波、余弦波、锯齿波（推入 `highFreqStream`）
+- 低频变量：循环计数器、模拟温度（每 25 个 tick 更新一次，触发 `notifyListeners`）
+- 静态变量：固定值 `version`（0x00010203）、`threshold`（3.14159）
+- 日志：每 100 个 tick 输出一条 `LogType.info` 日志
+
+### 5.3 UI 入口
+- **位置**：`MainWindow` 顶部工具栏，位于 `SerialTrafficMonitor` 右侧
+- **状态指示**：
+  - 未启动：灰色 `bug_report` 图标 + "Demo" 文字
+  - 运行中：橙色 `stop_circle` 图标 + "Demo中" 文字
+- **操作**：点击切换启动/停止；停止时自动清空 `registry` 中所有模拟变量
+
+### 5.4 实现要点
+- `toggleDemoMode()` 控制启停，内部通过 `_startDemoData()` / `_stopDemoData()` 管理
+- Demo 变量直接写入 `registry`，复用与真实设备完全一致的数据通路
+- `dispose()` 中自动取消 `_demoTimer`，防止内存泄漏
+
+---
+
+## 6. 模块目录结构（模块化后）
 
 ```
 lib/
