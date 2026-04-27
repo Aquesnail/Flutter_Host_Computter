@@ -97,46 +97,6 @@ class MainWindow extends StatelessWidget {
 
                 const SerialTrafficMonitor(),
 
-                const SizedBox(width: 10),
-
-                // Demo 测试数据按钮
-                Builder(builder: (context) {
-                  final isDemo = context.select<DeviceController, bool>((c) => c.demoModeActive);
-                  return Tooltip(
-                    message: isDemo ? "停止Demo数据" : "载入Demo测试数据",
-                    child: Material(
-                      color: isDemo ? Colors.orange.withValues(alpha: 0.3) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: () => context.read<DeviceController>().toggleDemoMode(),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isDemo ? Icons.stop_circle : Icons.bug_report,
-                                size: 18,
-                                color: isDemo ? Colors.orangeAccent : Colors.white70,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                isDemo ? "Demo中" : "Demo",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDemo ? Colors.orangeAccent : Colors.white70,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-
                 const Spacer(),
 
                 // 6. 状态标签：精准监听

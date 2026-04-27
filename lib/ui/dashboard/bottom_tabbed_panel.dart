@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../core/services/device_controller.dart';
 import '../../debug_console.dart';
 import '../../lowfreq_window.dart';
+import '../attitude/attitude_window.dart';
 
 class BottomTabbedPanel extends StatelessWidget {
   const BottomTabbedPanel({super.key});
@@ -8,18 +11,6 @@ class BottomTabbedPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-
-    // 假设这是你接下来要写的第二个控件，暂时用占位符代替
-    final Widget secondWidget = Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.terminal, size: 48, color: Colors.grey),
-          const SizedBox(height: 10),
-          Text("调试控制台 (待开发)", style: TextStyle(color: colorScheme.onSurfaceVariant)),
-        ],
-      ),
-    );
 
     return DefaultTabController(
       length: 2, // 标签数量
@@ -55,12 +46,51 @@ class BottomTabbedPanel extends StatelessWidget {
                     ],
                   ),
                 ),
-                // 可以在右侧加一些小工具按钮，比如“清空”、“导出”等
-                IconButton(
-                  icon: const Icon(Icons.more_horiz, size: 16),
-                  onPressed: () {},
-                  tooltip: "更多选项",
-                )
+                Builder(builder: (context) {
+                  final isDemo = context.select<DeviceController, bool>((c) => c.demoModeActive);
+                  return PopupMenuButton<String>(
+                    icon: Icon(Icons.more_horiz, size: 16, color: isDemo ? Colors.orangeAccent : null),
+                    tooltip: "更多选项",
+                    onSelected: (value) {
+                      if (value == 'demo') {
+                        context.read<DeviceController>().toggleDemoMode();
+                      } else if (value == 'attitude') {
+                        showAttitudeWindow(context);
+                      }
+                    },
+                    itemBuilder: (context) {
+                      return [
+                        const PopupMenuItem(
+                          value: 'attitude',
+                          child: Row(
+                            children: [
+                              Icon(Icons.threed_rotation, size: 18),
+                              SizedBox(width: 8),
+                              Text('3D 姿态指示器'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'demo',
+                          child: Builder(builder: (context) {
+                            final isDemo = context.select<DeviceController, bool>((c) => c.demoModeActive);
+                            return Row(
+                              children: [
+                                Icon(
+                                  isDemo ? Icons.stop_circle : Icons.bug_report,
+                                  size: 18,
+                                  color: isDemo ? Colors.orangeAccent : null,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(isDemo ? "停止Demo" : "载入Demo数据"),
+                              ],
+                            );
+                          }),
+                        ),
+                      ];
+                    },
+                  );
+                }),
               ],
             ),
           ),

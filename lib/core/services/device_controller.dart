@@ -470,6 +470,11 @@ class DeviceController extends ChangeNotifier {
     registry[2] = RegisteredVar(2, "cosine", 6, 0x20001004, isHighFreq: true);
     registry[3] = RegisteredVar(3, "saw", 6, 0x20001008, isHighFreq: true);
 
+    // 注册姿态高频变量（3D 姿态指示器用）
+    registry[10] = RegisteredVar(10, "pitch", 6, 0x20001100, isHighFreq: true);
+    registry[11] = RegisteredVar(11, "roll", 6, 0x20001104, isHighFreq: true);
+    registry[12] = RegisteredVar(12, "yaw", 6, 0x20001108, isHighFreq: true);
+
     // 注册低频变量（监控列表用）
     registry[4] = RegisteredVar(4, "counter", 2, 0x20002000);
     registry[5] = RegisteredVar(5, "temp", 3, 0x20002002);
@@ -498,6 +503,19 @@ class DeviceController extends ChangeNotifier {
       _highFreqDataCtrl.add(MapEntry(1, sine));
       _highFreqDataCtrl.add(MapEntry(2, cosine));
       _highFreqDataCtrl.add(MapEntry(3, saw));
+
+      // Demo attitude data (degrees)
+      final pitch = sin(_demoTime) * 30.0;
+      final roll = sin(_demoTime * 0.7) * 45.0;
+      final yaw = (_demoTime * 10.0) % 360.0;
+
+      registry[10]!.value = pitch;
+      registry[11]!.value = roll;
+      registry[12]!.value = yaw;
+
+      _highFreqDataCtrl.add(MapEntry(10, pitch));
+      _highFreqDataCtrl.add(MapEntry(11, roll));
+      _highFreqDataCtrl.add(MapEntry(12, yaw));
 
       if (_demoTick % 25 == 0) {
         final counter = (_demoTick ~/ 25) % 65536;
