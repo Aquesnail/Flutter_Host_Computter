@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../core/services/device_controller.dart';
 import '../../core/models/registered_var.dart';
 import '../../debug_protocol.dart';
@@ -73,39 +74,153 @@ class StaticVarsPanel extends StatelessWidget {
                   ],
                 ),
                 // 一键刷新所有按钮
-                Tooltip(
-                  message: "刷新所有静态变量",
-                  child: Material(
-                    color: Colors.purple.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(6),
-                    child: InkWell(
-                      onTap: () => _refreshAllStaticVars(context),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.refresh,
-                              size: 16,
-                              color: Colors.purple.withValues(alpha: 0.9),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 批量写入按钮
+                    Tooltip(
+                      message: "批量写入所有静态变量到下位机",
+                      child: Material(
+                        color: Colors.purple.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        child: InkWell(
+                          onTap: () => _writeAllStaticVars(context),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.upload,
+                                  size: 16,
+                                  color: Colors.purple.withValues(alpha: 0.9),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "写入",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        Colors.purple.withValues(alpha: 0.9),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              "全部刷新",
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.purple.withValues(alpha: 0.9),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 6),
+                    // 导入按钮
+                    Tooltip(
+                      message: "从 JSON 文件导入静态变量",
+                      child: Material(
+                        color: Colors.purple.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        child: InkWell(
+                          onTap: () => _importFromJson(context),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.download,
+                                  size: 16,
+                                  color: Colors.purple.withValues(alpha: 0.9),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "导入",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        Colors.purple.withValues(alpha: 0.9),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    // 导出按钮
+                    Tooltip(
+                      message: "导出静态变量到 JSON 文件",
+                      child: Material(
+                        color: Colors.purple.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        child: InkWell(
+                          onTap: () => _exportToJson(context),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.save,
+                                  size: 16,
+                                  color: Colors.purple.withValues(alpha: 0.9),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "导出",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        Colors.purple.withValues(alpha: 0.9),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    // 刷新按钮 (保留原位置)
+                    Material(
+                      color: Colors.purple.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                      child: InkWell(
+                        onTap: () => _refreshAllStaticVars(context),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.refresh,
+                                size: 16,
+                                color: Colors.purple.withValues(alpha: 0.9),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                "全部刷新",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.purple.withValues(alpha: 0.9),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -179,6 +294,126 @@ class StaticVarsPanel extends StatelessWidget {
     for (final variable in staticVars) {
       controller.requestStaticRefresh(variable.id);
       await Future.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  Future<void> _writeAllStaticVars(BuildContext context) async {
+    final controller = context.read<DeviceController>();
+    final staticVars =
+        controller.registry.values.where((v) => v.isStatic).toList();
+
+    if (staticVars.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("没有静态变量可写入"),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    if (!controller.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("请先连接串口"),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("正在写入 ${staticVars.length} 个静态变量..."),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+
+    await controller.writeAllStaticVarsToDevice();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("已发送 ${staticVars.length} 个静态变量到下位机"),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  Future<void> _importFromJson(BuildContext context) async {
+    final controller = context.read<DeviceController>();
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      dialogTitle: "选择静态变量配置文件",
+    );
+
+    if (result == null || result.files.isEmpty) return;
+    final path = result.files.single.path;
+    if (path == null) return;
+
+    try {
+      final count = await controller.loadStaticVarsFromJson(path);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("已导入 $count 个静态变量"),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("导入失败: $e"),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _exportToJson(BuildContext context) async {
+    final controller = context.read<DeviceController>();
+    final staticVars =
+        controller.registry.values.where((v) => v.isStatic).toList();
+
+    if (staticVars.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("没有静态变量可导出"),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    final result = await FilePicker.platform.saveFile(
+      dialogTitle: "保存静态变量配置文件",
+      fileName: "static_vars.json",
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+
+    if (result == null) return;
+
+    try {
+      await controller.saveStaticVarsToJson(result);
+      // 设置自动保存路径并触发首次保存
+      controller.setAutoSavePath(result);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("已导出到 $result"),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("导出失败: $e"),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 }
@@ -300,6 +535,9 @@ class _StaticVarTileState extends State<StaticVarTile> {
 
                 // 静态变量修改后自动请求刷新以获取更新后的值
                 controller.requestStaticRefresh(v.id);
+
+                // 触发自动保存
+                controller.triggerAutoSave();
 
                 Navigator.pop(ctx);
               } catch (e) {

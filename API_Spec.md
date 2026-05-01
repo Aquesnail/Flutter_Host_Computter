@@ -109,6 +109,11 @@ enum VariableType { uint8, int8, uint16, int16, uint32, int32, float }
 | `clearRegistry` | `void clearRegistry()` | 清空所有已注册的变量元数据 |
 | `requestStaticRefresh` | `void requestStaticRefresh(int varId)` | 发送指定静态变量的刷新请求 |
 | `toggleDemoMode` | `void toggleDemoMode()` | 切换 Demo 测试模式：启动时自动注册模拟变量并生成 50Hz 数据流，停止时清空变量 |
+| `saveStaticVarsToJson` | `Future<String> saveStaticVarsToJson(String path)` | 导出所有静态变量到 JSON 文件 |
+| `loadStaticVarsFromJson` | `Future<int> loadStaticVarsFromJson(String path)` | 从 JSON 文件导入静态变量，返回加载数量 |
+| `writeAllStaticVarsToDevice` | `Future<void> writeAllStaticVarsToDevice()` | 批量发送所有静态变量到下位机（每条间隔 20ms） |
+| `setAutoSavePath` | `void setAutoSavePath(String path)` | 设置自动保存路径 |
+| `triggerAutoSave` | `Future<void> triggerAutoSave()` | 触发自动保存（带 500ms 防抖） |
 | `dispose` | `@override void dispose()` | 关闭 `logStream` 并调用父类 dispose |
 
 ---

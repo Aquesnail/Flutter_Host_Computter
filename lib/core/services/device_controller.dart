@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -544,6 +545,101 @@ class DeviceController extends ChangeNotifier {
   // 发送静态变量刷新请求
   void requestStaticRefresh(int varId) {
     sendData(DebugProtocol.packStaticRefreshCmd(varId));
+  }
+
+  // ========== 静态变量 JSON 导出/导入 ==========
+  static const String _jsonVersion = "1.0";
+
+  // 导出静态变量到 JSON 文件
+  Future<String> saveStaticVarsToJson(String path) async {
+    final staticVars = registry.values.where((v) => v.isStatic).toList();
+    if (staticVars.isEmpty) {
+      throw Exception("没有静态变量可导出");
+    }
+
+    final varsList = staticVars.map((v) => {
+      "id": v.id,
+      "name": v.name,
+      "type": v.type,
+      "addr": v.addr,
+      "value": v.value,
+    }).toList();
+
+    final json = {
+      "version": _jsonVersion,
+      "timestamp": DateTime.now().toIso8601String(),
+      "vars": varsList,
+    };
+
+    final jsonStr = const JsonEncoder.withIndent("  ").convert(json);
+    await File(path).writeAsString(jsonStr);
+    return jsonStr;
+  }
+
+  // 从 JSON 文件导入静态变量（不写串口，只更新 registry）
+  Future<int> loadStaticVarsFromJson(String path) async {
+    final jsonStr = await File(path).readAsString();
+    final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+    final varsList = json["vars"] as List<dynamic>;
+    int loadedCount = 0;
+
+    for (final item in varsList) {
+      final id = item["id"] as int;
+      final name = item["name"] as String;
+      final type = item["type"] as int;
+      final addr = item["addr"] as int;
+      final value = item["value"];
+
+      if (registry.containsKey(id)) {
+        // 更新现有变量的值（替换整个对象）
+        registry[id] = RegisteredVar(id, name, type, addr, isStatic: true)..value = value;
+        loadedCount++;
+      } else {
+        // 新建变量
+        registry[id] = RegisteredVar(id, name, type, addr, isStatic: true)..value = value;
+        loadedCount++;
+      }
+    }
+
+    notifyListeners();
+    return loadedCount;
+  }
+
+  // 批量写入所有静态变量到下位机
+  Future<void> writeAllStaticVarsToDevice() async {
+    final staticVars = registry.values.where((v) => v.isStatic).toList();
+
+    for (final v in staticVars) {
+      final len = _getVarLength(v.type);
+      sendData(DebugProtocol.packWriteCmd(v.id, len, v.value, v.type));
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  // 自动保存静态变量到默认路径
+  String? _autoSavePath;
+  Timer? _autoSaveDebounce;
+
+  // 设置自动保存路径（供 UI 调用）
+  void setAutoSavePath(String path) {
+    _autoSavePath = path;
+  }
+
+  // 触发自动保存（带防抖）
+  Future<void> triggerAutoSave() async {
+    if (_autoSavePath == null) return;
+
+    // 防抖：500ms 内只保存一次
+    _autoSaveDebounce?.cancel();
+    _autoSaveDebounce = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        await saveStaticVarsToJson(_autoSavePath!);
+        print("自动保存静态变量: $_autoSavePath");
+      } catch (e) {
+        print("自动保存失败: $e");
+      }
+    });
   }
 
   // 只针对非静态变量的排序
