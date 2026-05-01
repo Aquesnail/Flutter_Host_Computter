@@ -306,7 +306,64 @@ class DebugConsole extends StatefulWidget
 
 ---
 
-## 6.  barrel 文件说明
+## 6. 姿态指示器 (`ui/attitude/`)
+
+### 6.1 数据模型
+
+#### `Attitude` (`attitude_indicator.dart`)
+```dart
+class Attitude {
+  final double roll;
+  final double pitch;
+  final double yaw;
+
+  const Attitude(this.roll, this.pitch, this.yaw);
+  const Attitude.zero();
+
+  Attitude copyWith({double? roll, double? pitch, double? yaw});
+}
+```
+
+### 6.2 绘制器
+
+#### `AttitudePainter` (`attitude_indicator.dart`)
+```dart
+class AttitudePainter extends CustomPainter {
+  AttitudePainter({
+    required Attitude attitude,
+    required bool isDrone,
+    required Color color,
+    bool solidMode = false,
+    double cameraPitch = -0.45,
+    double cameraYaw = -0.55,
+  });
+}
+```
+- 说明：根据 roll/pitch/yaw 角度渲染无人机或小车 3D 模型，支持线框/实体两种模式，正弦波投影显示地面参考网格。
+
+### 6.3 主窗口
+
+#### `AttitudeWindowContent` (`attitude_window.dart`)
+```dart
+class AttitudeWindowContent extends StatefulWidget
+```
+- 状态：
+  - `ValueNotifier<Attitude> _attitude`（当前姿态）
+  - `bool _isDrone`（无人机/小车切换）
+  - `bool _useDegrees`（角度单位）
+  - `bool _solidMode`（线框/实体模式）
+  - `double _cameraPitch / _cameraYaw`（相机视角）
+- 说明：订阅 `highFreqStream` 监听名为 `pitch`、`roll`、`yaw` 的高频变量，自动解析变量 ID 并实时更新姿态显示。
+
+#### `showAttitudeWindow()` (`attitude_window.dart`)
+```dart
+void showAttitudeWindow(BuildContext context)
+```
+- 说明：以对话框形式展示 720×560 姿态指示器窗口。
+
+---
+
+## 7. barrel 文件说明
 
 ### `device_control.dart`（根目录）
 ```dart

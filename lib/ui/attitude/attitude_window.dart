@@ -18,6 +18,14 @@ class _AttitudeWindowContentState extends State<AttitudeWindowContent> {
 
   bool _isDrone = true;
   bool _useDegrees = true;
+  bool _solidMode = false;
+
+  // Camera angles (in radians)
+  double _cameraPitch = -0.45;
+  double _cameraYaw = -0.55;
+
+  // Drag state
+  Offset? _lastDrag;
 
   int? _pitchId;
   int? _rollId;
@@ -80,6 +88,27 @@ class _AttitudeWindowContentState extends State<AttitudeWindowContent> {
     return '${rad.toStringAsFixed(3)} rad';
   }
 
+  void _onPanStart(DragStartDetails d) {
+    _lastDrag = d.localPosition;
+  }
+
+  void _onPanUpdate(DragUpdateDetails d) {
+    if (_lastDrag == null) return;
+    final delta = d.localPosition - _lastDrag!;
+    _lastDrag = d.localPosition;
+
+    setState(() {
+      _cameraYaw += delta.dx * 0.01;
+      _cameraPitch -= delta.dy * 0.01;
+      // Clamp pitch to avoid flipping
+      _cameraPitch = _cameraPitch.clamp(-1.4, 0.2);
+    });
+  }
+
+  void _onPanEnd(DragEndDetails d) {
+    _lastDrag = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -90,8 +119,8 @@ class _AttitudeWindowContentState extends State<AttitudeWindowContent> {
     final hasData = _pitchId != null || _rollId != null || _yawId != null;
 
     return SizedBox(
-      width: 560,
-      height: 520,
+      width: 720,
+      height: 560,
       child: Column(
         children: [
           // Header
@@ -112,12 +141,11 @@ class _AttitudeWindowContentState extends State<AttitudeWindowContent> {
             ),
           ),
 
-          // Controls
+          // Controls Row 1: Switches
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
             child: Row(
               children: [
-                // Model switch
                 SegmentedButton<bool>(
                   segments: const [
                     ButtonSegment(value: true, label: Text('无人机')),
@@ -131,7 +159,19 @@ class _AttitudeWindowContentState extends State<AttitudeWindowContent> {
                   },
                 ),
                 const SizedBox(width: 12),
-                // Unit switch
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('线框')),
+                    ButtonSegment(value: true, label: Text('实体')),
+                  ],
+                  selected: {_solidMode},
+                  onSelectionChanged: (set) {
+                    if (set.isNotEmpty) {
+                      setState(() => _solidMode = set.first);
+                    }
+                  },
+                ),
+                const SizedBox(width: 12),
                 SegmentedButton<bool>(
                   segments: const [
                     ButtonSegment(value: true, label: Text('°')),
@@ -145,7 +185,15 @@ class _AttitudeWindowContentState extends State<AttitudeWindowContent> {
                   },
                 ),
                 const Spacer(),
-                // Value readout
+              ],
+            ),
+          ),
+
+          // Controls Row 2: Value readout
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Row(
+              children: [
                 ValueListenableBuilder<Attitude>(
                   valueListenable: _attitude,
                   builder: (_, att, _) {
@@ -187,20 +235,40 @@ class _AttitudeWindowContentState extends State<AttitudeWindowContent> {
                             ),
                           ),
                         )
-                      : ValueListenableBuilder<Attitude>(
-                          valueListenable: _attitude,
-                          builder: (_, att, _) {
-                            return CustomPaint(
-                              painter: AttitudePainter(
-                                attitude: att,
-                                isDrone: _isDrone,
-                                color: colorScheme.primary,
-                              ),
-                              size: Size.infinite,
-                            );
-                          },
+                      : GestureDetector(
+                          onPanStart: _onPanStart,
+                          onPanUpdate: _onPanUpdate,
+                          onPanEnd: _onPanEnd,
+                          child: ValueListenableBuilder<Attitude>(
+                            valueListenable: _attitude,
+                            builder: (_, att, _) {
+                              return CustomPaint(
+                                painter: AttitudePainter(
+                                  attitude: att,
+                                  isDrone: _isDrone,
+                                  color: colorScheme.primary,
+                                  solidMode: _solidMode,
+                                  cameraPitch: _cameraPitch,
+                                  cameraYaw: _cameraYaw,
+                                ),
+                                size: Size.infinite,
+                              );
+                            },
+                          ),
                         ),
                 ),
+              ),
+            ),
+          ),
+
+          // Hint
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              '拖拽调整视角',
+              style: TextStyle(
+                fontSize: 11,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
               ),
             ),
           ),
