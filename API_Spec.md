@@ -393,7 +393,80 @@ void showAttitudeWindow(BuildContext context)
 
 ---
 
-## 7. barrel 文件说明
+## 7. HTTP API (`core/services/http_api.dart`)
+
+### `HttpApi`
+
+守护进程的 HTTP API 处理器，包装 `DeviceCore` 并暴露 REST + SSE 端点。
+
+```dart
+class HttpApi {
+  final DeviceCore _core;
+  HttpApi(this._core);
+
+  Future<void> handleRequest(HttpRequest request);
+  Future<T> _synchronized<T>(Future<T> Function() fn);  // 并发锁
+}
+```
+
+#### 端点列表
+
+| 端点 | 方法 | 说明 | 并发锁 |
+|------|------|------|--------|
+| `/ping` | GET | 健康检查，返回 `{"status":"ok","message":"pong"}` | - |
+| `/list-ports` | GET | 列出可用串口 | - |
+| `/connect` | POST | 连接串口，body: `{"port":"COM3","baud":115200}` | ✓ |
+| `/disconnect` | POST | 断开串口 | ✓ |
+| `/handshake` | POST | 握手，返回 `{"status":"ok","success":true}` | ✓ |
+| `/register` | POST | 注册变量，body: `{"addr":...,"name":...,"type":...,"isHighFreq":false,"isStatic":false}` | ✓ |
+| `/write` | POST | 修改变量值，body: `{"varId":1,"value":3.14,"type":6}` | ✓ |
+| `/refresh` | POST | 请求刷新单个静态变量，body: `{"varId":1}` | ✓ |
+| `/refresh-all` | POST | 请求刷新所有静态变量 | ✓ |
+| `/list-vars` | GET | 列出所有变量及其当前值 | - |
+| `/save-static` | POST | 导出静态变量 JSON，body: `{"path":"config.json"}` | ✓ |
+| `/load-static` | POST | 导入静态变量 JSON，body: `{"path":"config.json"}` | ✓ |
+| `/write-all-static` | POST | 批量写入所有静态变量到下位机 | ✓ |
+| `/text` | POST | 发送文本，body: `{"message":"Hello"}` | ✓ |
+| `/monitor/highfreq` | GET | SSE 高频数据流，query: `timeout`（秒） | - |
+| `/monitor/logs` | GET | SSE 日志流，query: `timeout`（秒） | - |
+| `/stats` | GET | 统计摘要，query: `varId`, `window`, `duration` | - |
+| `/plot` | GET | ASCII 波形图，query: `varId`, `width`, `duration` | - |
+| `/demo/start` | POST | 启动 Demo 测试模式 | ✓ |
+| `/demo/stop` | POST | 停止 Demo 测试模式 | ✓ |
+| `/shutdown` | POST | 关闭守护进程 | ✓ |
+
+**并发安全**：标记 ✓ 的端点通过 `_synchronized()` 串行化执行，避免并发修改 `DeviceCore` 状态导致竞态条件。
+
+**SSE 格式**：
+```
+data: {"type":"highfreq","varId":1,"value":3.14,"timestamp":"2026-05-04T12:00:00.000Z"}
+
+```
+
+---
+
+## 8. 入口文件
+
+### `flowaved` (`bin/flowaved.dart`) — 守护进程
+
+```dart
+void main(List<String> args) async
+```
+- 职责：解析 `--port` / `--baud` 参数，创建 `DeviceCore` 实例（可选自动连接串口），启动 HTTP 服务器监听 `127.0.0.1:9876`。
+- 信号处理：SIGINT 时调用 `core.dispose()` 并关闭服务器。
+
+### `flowave` (`bin/flowave.dart`) — CLI 客户端
+
+```dart
+void main(List<String> args)
+```
+- 职责：解析命令行参数，映射为 HTTP 请求发送到 `http://127.0.0.1:9876`，输出 JSON 响应。
+- 依赖：仅 `http` + `args` 包，不依赖 `DeviceCore` 或 Flutter。
+- 命令映射：参见 Architecture.md §9.3。
+
+---
+
+## 9. barrel 文件说明
 
 ### `device_control.dart`（根目录）
 ```dart
