@@ -46,71 +46,72 @@ Future<void> runFlowave(List<String> args) async {
     case 'list-ports':
       core.refreshPorts();
       print(jsonEncode(core.availablePorts));
-      return;
+      exit(0);
 
     case 'connect':
       if (portOption == null) {
         print(jsonEncode({'status': 'error', 'message': 'Missing --port option'}));
-        return;
+        exit(1);
       }
       final success = await core.connect(portOption, baudOption);
       if (success) {
         print(jsonEncode({'status': 'connected'}));
+        exit(0);
       } else {
         print(jsonEncode({'status': 'error', 'message': 'Failed to connect'}));
+        exit(1);
       }
-      return;
 
     case 'disconnect':
       core.disconnect();
       print(jsonEncode({'status': 'disconnected'}));
-      return;
+      exit(0);
 
     case 'handshake':
       if (!core.isConnected) {
         print(jsonEncode({'status': 'error', 'message': 'Not connected'}));
-        return;
+        exit(1);
       }
       final success = await core.shakeWithMCU();
       print(jsonEncode({'success': success}));
-      return;
+      exit(0);
 
     // ========== 变量操作命令 ==========
     case 'register':
       await _handleRegister(core, commandArgs, argResults);
-      return;
+      exit(0);
 
     case 'write':
       await _handleWrite(core, commandArgs);
-      return;
+      exit(0);
 
     case 'refresh':
       await _handleRefresh(core, commandArgs);
-      return;
+      exit(0);
 
     case 'refresh-all':
       await _handleRefreshAll(core);
-      return;
+      exit(0);
 
     case 'list-vars':
       _handleListVars(core);
-      return;
+      exit(0);
 
     case 'save-static':
       await _handleSaveStatic(core, commandArgs);
-      return;
+      exit(0);
 
     case 'load-static':
       await _handleLoadStatic(core, commandArgs);
-      return;
+      exit(0);
 
     case 'write-all-static':
       await _handleWriteAllStatic(core);
-      return;
+      exit(0);
 
     case 'text':
       await _handleText(core, commandArgs);
-      return;
+      exit(0);
 
     // ========== 监控与流式输出 ==========
     case 'monitor':
@@ -120,17 +121,17 @@ Future<void> runFlowave(List<String> args) async {
     // ========== AI 友好命令 ==========
     case 'stats':
       await _handleStats(core, commandArgs, argResults);
-      return;
+      exit(0);
 
     case 'plot':
       await _handlePlot(core, commandArgs, argResults);
-      return;
+      exit(0);
 
     case 'help':
     case '--help':
     case '-h':
       _printUsage(parser);
-      return;
+      exit(0);
 
     default:
       print(jsonEncode({'status': 'error', 'message': 'Unknown command: $command'}));

@@ -122,6 +122,7 @@ enum VariableType { uint8, int8, uint16, int16, uint32, int32, float }
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | 同 DeviceController 全部字段 | - | 全部状态字段与 DeviceController 相同 |
+| `_waitingForHandshake` | `bool` | 握手等待标志，等待期间忽略非握手响应包 |
 
 #### 回调
 | 字段 | 类型 | 说明 |
