@@ -15,6 +15,7 @@ class DeviceCore {
   bool shakeHandSuccessful = false;
   final Map<int, RegisteredVar> registry = {};
 
+  bool _waitingForHandshake = false;  // handshake 等待标志
   Completer<bool>? _handshakeCompleter;
   final _highFreqDataCtrl = StreamController<MapEntry<int, double>>.broadcast();
   final _logCtrl = StreamController<LogEntry>.broadcast();
@@ -133,11 +134,13 @@ class DeviceCore {
     }
 
     _handshakeCompleter = Completer<bool>();
+    _waitingForHandshake = true;
 
     try {
       print("发送握手包...");
       sendData(DebugProtocol.packHandshake());
     } catch (e) {
+      _waitingForHandshake = false;
       return false;
     }
 
@@ -146,9 +149,11 @@ class DeviceCore {
         const Duration(seconds: 2),
         onTimeout: () {
           print("握手超时");
+          _waitingForHandshake = false;
           return false;
         },
       );
+      _waitingForHandshake = false;
       return result;
     } catch (e) {
       return false;
@@ -235,6 +240,23 @@ class DeviceCore {
   }
 
   void _processPacket(int vid, int rawType, int vlen, Uint8List dataPart) {
+    // 等待握手时只处理握手响应
+    if (_waitingForHandshake) {
+      if (vid == 0xFD) {
+        print("收到握手回复!");
+        shakeHandSuccessful = true;
+        _waitingForHandshake = false;
+        _notify();
+
+        if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
+          _handshakeCompleter!.complete(true);
+          _handshakeCompleter = null;
+        }
+      }
+      // 忽略其他所有包
+      return;
+    }
+
     if (vid == 0xFD) {
       print("收到握手回复!");
       shakeHandSuccessful = true;

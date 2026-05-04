@@ -116,6 +116,30 @@ enum VariableType { uint8, int8, uint16, int16, uint32, int32, float }
 | `triggerAutoSave` | `Future<void> triggerAutoSave()` | 触发自动保存（带 500ms 防抖） |
 | `dispose` | `@override void dispose()` | 关闭 `logStream` 并调用父类 dispose |
 
+### `DeviceCore` (纯 Dart 业务核心)
+
+#### 状态字段
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| 同 DeviceController 全部字段 | - | 全部状态字段与 DeviceController 相同 |
+
+#### 回调
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `onChanged` | `void Function()?` | 状态变化回调，替代 `notifyListeners()` |
+
+#### Stream
+| 名称 | 类型 | 说明 |
+|------|------|------|
+| 同 DeviceController | - | highFreqStream, logStream 完全相同 |
+
+#### 公共方法
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| 同 DeviceController 全部方法 | - | 所有公共方法与 DeviceController 相同 |
+
+**注意**：DeviceCore 不继承 ChangeNotifier，是一个纯 Dart 类，用于 CLI 和非 Flutter 环境。
+
 ---
 
 ## 4. 工具类 (`ring_buffer.dart`)
