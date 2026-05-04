@@ -15,6 +15,7 @@ dependencies:
   multi_split_view: ^3.6.1
   vector_math: ^2.1.4
   file_picker: ^8.0.0
+  args: ^2.5.0
 
 dev_dependencies:
   flutter_test:
