@@ -30,54 +30,89 @@ class StaticVarsPanel extends StatelessWidget {
                 ),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
               children: [
+                // 第一行：标题 + 全部刷新按钮
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(
-                      Icons.storage,
-                      size: 18,
-                      color: Colors.purple.withValues(alpha: 0.8),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      "静态变量",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.purple,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // 显示静态变量数量
-                    Selector<DeviceController, int>(
-                      selector: (_, c) =>
-                          c.registry.values.where((v) => v.isStatic).length,
-                      builder: (_, count, __) => Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(10),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.storage,
+                          size: 18,
+                          color: Colors.purple.withValues(alpha: 0.8),
                         ),
-                        child: Text(
-                          "$count",
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.purple,
+                        const SizedBox(width: 8),
+                        const Text(
+                          "静态变量",
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: Colors.purple,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Selector<DeviceController, int>(
+                          selector: (_, c) =>
+                              c.registry.values.where((v) => v.isStatic).length,
+                          builder: (_, count, __) => Container(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              "$count",
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.purple,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Material(
+                      color: Colors.purple.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                      child: InkWell(
+                        onTap: () => _refreshAllStaticVars(context),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.refresh,
+                                size: 16,
+                                color: Colors.purple.withValues(alpha: 0.9),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                "全部刷新",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.purple.withValues(alpha: 0.9),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ],
                 ),
-                // 一键刷新所有按钮
+                const SizedBox(height: 6),
+                // 第二行：写入/导入/导出按钮
                 Row(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    // 批量写入按钮
                     Tooltip(
                       message: "批量写入所有静态变量到下位机",
                       child: Material(
@@ -114,7 +149,6 @@ class StaticVarsPanel extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    // 导入按钮
                     Tooltip(
                       message: "从 JSON 文件导入静态变量",
                       child: Material(
@@ -151,7 +185,6 @@ class StaticVarsPanel extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    // 导出按钮
                     Tooltip(
                       message: "导出静态变量到 JSON 文件",
                       child: Material(
@@ -183,39 +216,6 @@ class StaticVarsPanel extends StatelessWidget {
                                 ),
                               ],
                             ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // 刷新按钮 (保留原位置)
-                    Material(
-                      color: Colors.purple.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(6),
-                      child: InkWell(
-                        onTap: () => _refreshAllStaticVars(context),
-                        borderRadius: BorderRadius.circular(6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.refresh,
-                                size: 16,
-                                color: Colors.purple.withValues(alpha: 0.9),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                "全部刷新",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.purple.withValues(alpha: 0.9),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
                           ),
                         ),
                       ),
