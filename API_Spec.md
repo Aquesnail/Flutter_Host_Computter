@@ -118,28 +118,18 @@ enum VariableType { uint8, int8, uint16, int16, uint32, int32, float }
 
 ### `DeviceCore` (纯 Dart 业务核心)
 
-#### 状态字段
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| 同 DeviceController 全部字段 | - | 全部状态字段与 DeviceController 相同 |
-| `_waitingForHandshake` | `bool` | 握手等待标志，等待期间忽略非握手响应包 |
+`DeviceCore` 是 `DeviceController` 的底层实现，包含所有实际的状态字段、Stream 和业务方法。`DeviceController` 不重复定义这些成员，而是通过 **代理模式（proxy/getter）** 将全部调用委托给内部的 `_core` 实例，同时通过 `onChanged` 回调桥接 `ChangeNotifier.notifyListeners()`。
 
-#### 回调
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `onChanged` | `void Function()?` | 状态变化回调，替代 `notifyListeners()` |
+这在文档中表现为两者的接口高度相似，但在代码层面并无重复——`DeviceController` 是纯粹的 Flutter 绑定层，与 `DeviceCore`（纯 Dart）分离以支持 CLI 和守护进程复用。
 
-#### Stream
-| 名称 | 类型 | 说明 |
-|------|------|------|
-| 同 DeviceController | - | highFreqStream, logStream 完全相同 |
-
-#### 公共方法
-| 方法 | 签名 | 说明 |
-|------|------|------|
-| 同 DeviceController 全部方法 | - | 所有公共方法与 DeviceController 相同 |
-
-**注意**：DeviceCore 不继承 ChangeNotifier，是一个纯 Dart 类，用于 CLI 和非 Flutter 环境。
+| 差异点 | DeviceController | DeviceCore |
+|--------|-----------------|------------|
+| 基类 | `ChangeNotifier` | 无 |
+| 状态字段 | 通过 getter 代理到 `_core` | 实际持有字段 |
+| 公共方法 | 通过方法代理到 `_core` | 实际实现 |
+| Stream | 通过 getter 代理到 `_core` | 实际持有 `StreamController` |
+| UI 通知 | `notifyListeners()` | `onChanged` 回调 |
+| 使用场景 | Flutter GUI | CLI 守护进程 (`flowaved`) |
 
 ---
 
@@ -436,6 +426,10 @@ class HttpApi {
 | `/shutdown` | POST | 关闭守护进程 | ✓ |
 
 **并发安全**：标记 ✓ 的端点通过 `_synchronized()` 串行化执行，避免并发修改 `DeviceCore` 状态导致竞态条件。
+
+**SSE 超时机制**：`timeout` 参数由**服务端** `Timer` 实现。当 `timeout > 0` 时，服务端在指定秒数后主动取消 `StreamSubscription` 并关闭 HTTP 响应；客户端无需自行断连。`timeout` 为 0 时连接持续直到客户端断开。
+
+**SSE 多客户端支持**：`highFreqStream` 和 `logStream` 均为广播流（`StreamController.broadcast()`），多个 CLI/GUI 客户端可同时订阅同一 SSE 端点而不会冲突。
 
 **SSE 格式**：
 ```

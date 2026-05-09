@@ -161,8 +161,16 @@ MainWindow (AppBar 区域)
 - 第 5 位 (`maskStatic = 0x20`): 静态变量标志（需手动刷新）
 
 ### 3.5 数据缓存与流
+
+**广播流**：`highFreqStream` 和 `logStream` 均通过 `StreamController.broadcast()` 创建，支持多个订阅者同时监听（如 GUI 示波器、姿态指示器、多个 CLI SSE 客户端），不会出现单订阅流冲突。
+
+**帧同步缓冲区**：串口接收的数据先写入 `List<int> _rxBuffer`（最大 1MB），在 `_onDataReceived` 中逐字节搜索帧头 `0xAA`，校验帧长度和 CRC16 后提取完整帧；CRC 失败或数据不足时保留剩余数据等待后续拼接，超量时自动清空防止内存溢出。
+
+**流推送**：
 - `DeviceController.highFreqStream` 向订阅者推送每条解析出的高频数据。
 - `DeviceController.logStream` 向 `DebugConsole` 推送新增的日志条目。
+
+**SSE 超时**：监控 SSE 端点的 `timeout` 参数由服务端 `Timer` 实现，到期后取消 `StreamSubscription` 并关闭 HTTP 响应，避免挂死连接。
 
 ---
 
