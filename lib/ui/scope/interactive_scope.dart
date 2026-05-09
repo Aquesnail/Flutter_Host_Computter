@@ -1,7 +1,10 @@
+import 'dart:math';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../../ring_buffer.dart';
 import 'pro_scope_painter.dart';
+
+enum ScopeTool { pan, zoomRect }
 
 class InteractiveScope extends StatefulWidget {
   final Map<int, RingBuffer> dataPoints;
@@ -14,7 +17,7 @@ class InteractiveScope extends StatefulWidget {
     required this.dataPoints,
     required this.varIds,
     required this.colors,
-    this.deltaTime = 1.0
+    this.deltaTime = 1.0,
   });
 
   @override
@@ -22,180 +25,363 @@ class InteractiveScope extends StatefulWidget {
 }
 
 class _InteractiveScopeState extends State<InteractiveScope> {
-  // 视图变换状态
   double _scaleX = 1.0;
   double _scaleY = 1.0;
-  double _offsetX = 0.0; // X轴偏移 (像素)
-  double _offsetY = 0.0; // Y轴偏移 (像素)
+  double _offsetX = 0.0;
+  double _offsetY = 0.0;
   final double _snapThreshold = 50.0;
-//是否锁定横坐标至最右侧的标志位
   bool _autoLock = true;
-  // 游标系统
-  double? _cursorX; // 游标位置 (对应数据的 index 或时间)
 
-  // 布局常量
-  final double _yAxisWidth = 50.0; // 左侧 Y 轴区域宽度
-  final double _xAxisHeight = 30.0; // 底部 X 轴区域高度
+  double? _cursorX;
+
+  final double _yAxisWidth = 50.0;
+  final double _xAxisHeight = 30.0;
+
+  // 工具模式
+  ScopeTool _tool = ScopeTool.pan;
+
+  // 矩形框选
+  Offset? _rectStart;
+  Offset? _rectEnd;
+
+  // 布局尺寸（从 LayoutBuilder 获取，非状态变量避免频繁重建）
+  double _chartWidth = 0;
+  double _chartHeight = 0;
+  double _centerY = 0;
 
   @override
   void didUpdateWidget(InteractiveScope oldWidget) {
     super.didUpdateWidget(oldWidget);
-
   }
 
-void _handleWheel(PointerScrollEvent event, BoxConstraints constraints) {
-     setState(() {
-        // ... 原有逻辑 ...
-        final double zoomFactor = 0.1;
-        final bool isZoomIn = event.scrollDelta.dy < 0;
-        final double scaleMultiplier = isZoomIn ? (1 + zoomFactor) : (1 - zoomFactor);
+  // ─── 自动适配 Y ────────────────────────────────────────
+  void _autoFitY() {
+    double minVal = double.infinity;
+    double maxVal = double.negativeInfinity;
+    bool hasData = false;
 
-        if (event.localPosition.dx >= _yAxisWidth) {
-           // X轴缩放
-           if (_autoLock) {
-              _scaleX *= scaleMultiplier;
-              // 锁定状态下，缩放不需要手动算 _offsetX，
-              // 因为 setState 触发 build，build 里的 LayoutBuilder 会自动用新的 scaleX
-              // 重新计算出靠右对齐的 _offsetX。
-           } else {
-              // 非锁定状态，以鼠标为中心
-              final double focalPointX = event.localPosition.dx;
-              // 修正 focalPointX 对应的是绘图区的坐标
-              final double chartFocalX = focalPointX;
-              // newOffset = mouse - (mouse - oldOffset) * scale
-              _offsetX = chartFocalX - (chartFocalX - _offsetX) * scaleMultiplier;
-              _scaleX *= scaleMultiplier;
-           }
-        } else {
-           // Y轴缩放 (保持不变)
-           final double focalPointY = event.localPosition.dy;
-           _offsetY = focalPointY - (focalPointY - _offsetY) * scaleMultiplier;
-           _scaleY *= scaleMultiplier;
-        }
-     });
-  }
-
-void _handlePan(DragUpdateDetails details) {
-    setState(() {
-      if (details.localPosition.dx < _yAxisWidth) {
-         _offsetY += details.delta.dy;
-         return;
+    for (final id in widget.varIds) {
+      final points = widget.dataPoints[id];
+      if (points == null || points.length == 0) continue;
+      for (int i = 0; i < points.length; i++) {
+        final v = points[i];
+        if (v < minVal) minVal = v;
+        if (v > maxVal) maxVal = v;
+        hasData = true;
       }
+    }
 
-      // 一旦用户开始拖拽 X 轴，先应用当前的 delta
-      _offsetX += details.delta.dx;
+    if (!hasData || minVal == maxVal || _chartHeight <= 0) return;
 
-      // 这里的逻辑依然需要 context.size 吗？
-      // 在回调里访问 context.size 是安全的，但既然我们有了 LayoutBuilder，
-      // 我们可以把 maxLen 的判断逻辑放在这里，或者简单点，
-      // 只判断是否“试图往左拖离了最右边”。
+    setState(() {
+      final margin = _chartHeight * 0.1;
+      final dataRange = maxVal - minVal;
+      _scaleY = (_chartHeight - 2 * margin) / (dataRange * 20);
+      _offsetY = margin - _centerY + maxVal * _scaleY * 20;
+    });
+  }
 
-      // 为了简单和安全，我们在 build 里处理“自动吸附”，
-      // 在这里只处理“解除锁定”。
+  // ─── 自动适配 X ────────────────────────────────────────
+  void _autoFitX() {
+    int maxLen = 0;
+    for (final p in widget.dataPoints.values) {
+      if (p.length > maxLen) maxLen = p.length;
+    }
+    if (maxLen == 0 || _chartWidth <= 0) return;
 
-      // 只要用户有水平拖动，暂时先解除锁定，
-      // 下一帧 build 时会根据位置再次判断是否吸附
+    setState(() {
+      final margin = _chartWidth * 0.05;
+      _scaleX = (_chartWidth - 2 * margin) / maxLen;
+      _offsetX = _yAxisWidth + margin;
       _autoLock = false;
     });
   }
 
+  // ─── 重置视图 ──────────────────────────────────────────
+  void _resetView() {
+    setState(() {
+      _scaleX = 1.0;
+      _scaleY = 1.0;
+      _offsetX = 0.0;
+      _offsetY = 0.0;
+      _autoLock = true;
+      _cursorX = null;
+    });
+  }
+
+  // ─── 矩形框选应用 ──────────────────────────────────────
+  void _applyRectZoom() {
+    if (_rectStart == null || _rectEnd == null) return;
+
+    final oldScaleX = _scaleX;
+    final oldScaleY = _scaleY;
+    final oldOffsetX = _offsetX;
+    final oldOffsetY = _offsetY;
+
+    double rectLeft = min(_rectStart!.dx, _rectEnd!.dx);
+    double rectRight = max(_rectStart!.dx, _rectEnd!.dx);
+    double rectTop = min(_rectStart!.dy, _rectEnd!.dy);
+    double rectBottom = max(_rectStart!.dy, _rectEnd!.dy);
+
+    // 裁剪到绘图区
+    rectLeft = max(rectLeft, _yAxisWidth);
+    rectRight = min(rectRight, _yAxisWidth + _chartWidth);
+    rectTop = max(rectTop, 0.0);
+    rectBottom = min(rectBottom, _chartHeight);
+
+    final rectWidth = rectRight - rectLeft;
+    final rectHeight = rectBottom - rectTop;
+
+    if (rectWidth < 5 || rectHeight < 5) {
+      setState(() {
+        _rectStart = null;
+        _rectEnd = null;
+        _tool = ScopeTool.pan;
+      });
+      return;
+    }
+
+    final newScaleX = oldScaleX * (_chartWidth / rectWidth);
+    final newScaleY = oldScaleY * (_chartHeight / rectHeight);
+
+    final dataLeft = (rectLeft - oldOffsetX) / oldScaleX;
+    final dataTop = (_centerY - rectTop + oldOffsetY) / (oldScaleY * 20);
+
+    final newOffsetX = _yAxisWidth - dataLeft * newScaleX;
+    final newOffsetY = 0 - _centerY + dataTop * newScaleY * 20;
+
+    setState(() {
+      _scaleX = newScaleX;
+      _scaleY = newScaleY;
+      _offsetX = newOffsetX;
+      _offsetY = newOffsetY;
+      _autoLock = false;
+      _rectStart = null;
+      _rectEnd = null;
+      _tool = ScopeTool.pan;
+    });
+  }
+
+  // ─── 滚轮缩放 ──────────────────────────────────────────
+  void _handleWheel(PointerScrollEvent event) {
+    setState(() {
+      final zoomFactor = 0.1;
+      final isZoomIn = event.scrollDelta.dy < 0;
+      final scaleMultiplier = isZoomIn ? (1 + zoomFactor) : (1 - zoomFactor);
+
+      if (event.localPosition.dx >= _yAxisWidth) {
+        if (_autoLock) {
+          _scaleX *= scaleMultiplier;
+        } else {
+          final chartFocalX = event.localPosition.dx;
+          _offsetX = chartFocalX - (chartFocalX - _offsetX) * scaleMultiplier;
+          _scaleX *= scaleMultiplier;
+        }
+      } else {
+        final focalPointY = event.localPosition.dy;
+        _offsetY = focalPointY - (focalPointY - _offsetY) * scaleMultiplier;
+        _scaleY *= scaleMultiplier;
+      }
+    });
+  }
+
+  // ─── 手势处理 ──────────────────────────────────────────
+  void _handlePanStart(DragStartDetails details) {
+    if (_tool == ScopeTool.zoomRect) {
+      setState(() {
+        _rectStart = details.localPosition;
+        _rectEnd = details.localPosition;
+      });
+    }
+  }
+
+  void _handlePanUpdate(DragUpdateDetails details) {
+    if (_tool == ScopeTool.zoomRect) {
+      setState(() {
+        _rectEnd = details.localPosition;
+      });
+      return;
+    }
+
+    // 平移模式
+    setState(() {
+      if (details.localPosition.dx < _yAxisWidth) {
+        _offsetY += details.delta.dy;
+        return;
+      }
+      _offsetX += details.delta.dx;
+      _autoLock = false;
+    });
+  }
+
+  void _handlePanEnd(DragEndDetails details) {
+    if (_tool == ScopeTool.zoomRect) {
+      _applyRectZoom();
+      return;
+    }
+
+    // 平移模式松手：检查是否需要吸附回右侧
+    int maxLen = 0;
+    for (final p in widget.dataPoints.values) {
+      if (p.length > maxLen) maxLen = p.length;
+    }
+    final viewportRightIndex = (_chartWidth - _offsetX) / _scaleX;
+    if (viewportRightIndex >= maxLen - (_snapThreshold / _scaleX)) {
+      setState(() {
+        _autoLock = true;
+      });
+    }
+  }
+
   void _handleDoubleTapDown(TapDownDetails details) {
-    // 双击添加/移动游标
     if (details.localPosition.dx > _yAxisWidth) {
       setState(() {
-        // 将屏幕坐标反算回数据坐标 (Index)
-        // ScreenX = DataX * ScaleX + OffsetX
-        // DataX = (ScreenX - OffsetX) / ScaleX
         _cursorX = (details.localPosition.dx - _offsetX) / _scaleX;
       });
     }
   }
 
+  void _handleSecondaryTap(TapUpDetails details) {
+    // 右键取消框选
+    if (_tool == ScopeTool.zoomRect && _rectStart != null) {
+      setState(() {
+        _rectStart = null;
+        _rectEnd = null;
+        _tool = ScopeTool.pan;
+      });
+    }
+  }
+
+  // ─── 工具栏 ────────────────────────────────────────────
+  Widget _buildToolbar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _toolBtn(Icons.open_with, ScopeTool.pan, '平移模式'),
+          _toolBtn(Icons.crop_free, ScopeTool.zoomRect, '框选缩放'),
+          _divider(),
+          _actionBtn(Icons.swap_vert, '自动适配 Y', _autoFitY),
+          _actionBtn(Icons.swap_horiz, '自动适配 X', _autoFitX),
+          _actionBtn(Icons.zoom_out_map, '重置视图', _resetView),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider() {
+    return const SizedBox(
+      height: 18,
+      child: VerticalDivider(width: 1, color: Colors.white24),
+    );
+  }
+
+  Widget _toolBtn(IconData icon, ScopeTool tool, String tooltip) {
+    final isActive = _tool == tool;
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: () => setState(() => _tool = tool),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.blueAccent.withValues(alpha: 0.4) : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(icon, size: 18, color: isActive ? Colors.lightBlueAccent : Colors.white70),
+        ),
+      ),
+    );
+  }
+
+  Widget _actionBtn(IconData icon, String tooltip, VoidCallback onTap) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(icon, size: 18, color: Colors.white70),
+        ),
+      ),
+    );
+  }
+
+  // ─── Build ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    // 【修改点 3】使用 LayoutBuilder 获取实时尺寸
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 1. 获取当前绘图区的实际宽度
-        // constraints.maxWidth 是整个控件的宽度
-        final double totalWidth = constraints.maxWidth;
-        final double chartWidth = totalWidth - _yAxisWidth;
+        final totalWidth = constraints.maxWidth;
+        final totalHeight = constraints.maxHeight;
+        _chartWidth = totalWidth - _yAxisWidth;
+        _chartHeight = totalHeight - _xAxisHeight;
+        _centerY = totalHeight / 2;
 
-        // 2. 计算数据最大长度
         int maxLen = 0;
         if (widget.dataPoints.isNotEmpty) {
-           for (var p in widget.dataPoints.values) {
-             if (p.length > maxLen) maxLen = p.length;
-           }
+          for (final p in widget.dataPoints.values) {
+            if (p.length > maxLen) maxLen = p.length;
+          }
         }
 
-        // 3. 核心逻辑：如果是自动锁定模式，强制覆盖 _offsetX
-        // 这实现了“数据更新时自动跟手”的效果
         if (_autoLock && maxLen > 0) {
-           // 强制让视图对齐到最右边
-           // 注意：我们直接修改用于绘制的变量，但不调用 setState（因为已经在 build 中）
-           // 这里不能直接改 _offsetX 成员变量，否则会报错 "setState during build"
-           // 技巧：我们定义一个 renderOffsetX 传给 Painter
-           _offsetX = chartWidth - (maxLen * _scaleX) - 10;
-        } else {
-           // 如果是非锁定模式，我们检查一下是否需要“吸附”回去
-           // 计算当前视口右侧对应的 Index
-           double viewportRightIndex = (chartWidth - _offsetX) / _scaleX;
-
-           // 如果非常接近最右侧 (吸附阈值)
-           if (viewportRightIndex >= maxLen - (_snapThreshold / _scaleX)) {
-             // 自动吸附回去
-             // 注意：这里需要小心死循环。通常我们在 build 里只做计算。
-             // 如果需要改变状态(_autoLock)，最好推迟到下一帧，或者由用户交互触发。
-             // 简单起见：这里只做“如果不锁定，就用用户拖出来的 _offsetX”
-           }
+          _offsetX = _chartWidth - (maxLen * _scaleX) - 10;
         }
 
         return Listener(
           onPointerSignal: (event) {
             if (event is PointerScrollEvent) {
-               // 传入 constraints 以便缩放逻辑也能拿到尺寸
-               _handleWheel(event, constraints);
+              _handleWheel(event);
             }
           },
           child: GestureDetector(
-            onPanUpdate: _handlePan,
-            onPanEnd: (details) {
-               // 拖拽松手时，检查是否需要重新开启锁定
-               int maxLen = 0;
-               for (var p in widget.dataPoints.values) {
-                 if (p.length > maxLen) maxLen = p.length;
-               }
-               // 重新计算边界
-               double viewportRightIndex = (chartWidth - _offsetX) / _scaleX;
-               if (viewportRightIndex >= maxLen - (_snapThreshold / _scaleX)) {
-                 setState(() {
-                   _autoLock = true;
-                 });
-               }
-            },
+            onPanStart: _handlePanStart,
+            onPanUpdate: _handlePanUpdate,
+            onPanEnd: _handlePanEnd,
             onDoubleTapDown: _handleDoubleTapDown,
-            child: Container(
-              color: const Color(0xFF1E1E1E),
-              child: ClipRect(
-                child: CustomPaint(
-                  painter: ProScopePainter(
-                    allPoints: widget.dataPoints,
-                    ids: widget.varIds,
-                    colors: widget.colors,
-                    scaleX: _scaleX,
-                    scaleY: _scaleY,
-                    // 【关键】直接把上面计算好的(或缓存的) _offsetX 传进去
-                    offsetX: _offsetX,
-                    offsetY: _offsetY,
-                    cursorX: _cursorX,
-                    yAxisWidth: _yAxisWidth,
-                    xAxisHeight: _xAxisHeight,
-                    deltaTime: widget.deltaTime,
+            onSecondaryTapUp: _handleSecondaryTap,
+            child: Stack(
+              children: [
+                Container(
+                  color: const Color(0xFF1E1E1E),
+                  child: ClipRect(
+                    child: CustomPaint(
+                      painter: ProScopePainter(
+                        allPoints: widget.dataPoints,
+                        ids: widget.varIds,
+                        colors: widget.colors,
+                        scaleX: _scaleX,
+                        scaleY: _scaleY,
+                        offsetX: _offsetX,
+                        offsetY: _offsetY,
+                        cursorX: _cursorX,
+                        yAxisWidth: _yAxisWidth,
+                        xAxisHeight: _xAxisHeight,
+                        deltaTime: widget.deltaTime,
+                        rectStart: _rectStart,
+                        rectEnd: _rectEnd,
+                      ),
+                      size: Size.infinite,
+                    ),
                   ),
-                  size: Size.infinite,
                 ),
-              ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: _buildToolbar(),
+                ),
+              ],
             ),
           ),
         );
