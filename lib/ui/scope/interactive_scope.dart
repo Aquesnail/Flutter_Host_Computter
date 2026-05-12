@@ -136,7 +136,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
       setState(() {
         _rectStart = null;
         _rectEnd = null;
-        _tool = ScopeTool.pan;
       });
       return;
     }
@@ -158,7 +157,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
       _autoLock = false;
       _rectStart = null;
       _rectEnd = null;
-      _tool = ScopeTool.pan;
     });
   }
 

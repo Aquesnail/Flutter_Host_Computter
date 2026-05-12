@@ -228,7 +228,13 @@ class InteractiveScope extends StatefulWidget {
   });
 }
 ```
-- 说明：支持鼠标滚轮缩放（X/Y 轴区分）、拖拽平移、双击添加游标、自动右边缘锁定。
+- 工具栏（右上角浮动，半透明深色背景）：
+  - **平移模式**（`ScopeTool.pan`，默认）：左键拖拽平移视图，滚轮缩放，双击添加游标，拖拽松手自动吸附右边缘锁定
+  - **框选缩放模式**（`ScopeTool.zoomRect`）：左键拖拽绘制矩形选区，松手后自动缩放到该区域（X/Y 同时适配），右键取消当前选区；完成后保持当前模式不切换
+  - **自动适配 Y**：扫描全部通道数据，根据最大/最小幅值自动计算 `scaleY` 和 `offsetY`（上下留 10% 边距）
+  - **自动适配 X**：根据数据总长度自动计算 `scaleX`，使全部数据可见（关闭自动锁定）
+  - **重置视图**：恢复所有变换参数为默认值，清除游标，重新开启右边缘锁定
+- 框选矩形 < 5px 时忽略，防止误触造成极端缩放。
 
 #### `ProScopePainter` (`ui/scope/pro_scope_painter.dart`)
 ```dart
@@ -245,10 +251,12 @@ class ProScopePainter extends CustomPainter {
     required double yAxisWidth,
     required double xAxisHeight,
     required double deltaTime,
+    Offset? rectStart,
+    Offset? rectEnd,
   });
 }
 ```
-- 说明：自定义绘制网格、波形、游标、坐标轴刻度与标签。仅绘制可见索引范围内的点以优化性能。
+- 说明：自定义绘制网格、波形、游标、坐标轴刻度与标签、矩形选区叠加（蓝色半透明填充 + 白色边框）。仅绘制可见索引范围内的点以优化性能。
 
 #### `ChannelValueTile` (`ui/scope/channel_value_tile.dart`)
 ```dart
