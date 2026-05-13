@@ -37,14 +37,11 @@ class _InteractiveScopeState extends State<InteractiveScope> {
   final double _yAxisWidth = 50.0;
   final double _xAxisHeight = 30.0;
 
-  // 工具模式
   ScopeTool _tool = ScopeTool.pan;
 
-  // 矩形框选
   Offset? _rectStart;
   Offset? _rectEnd;
 
-  // 布局尺寸（从 LayoutBuilder 获取，非状态变量避免频繁重建）
   double _chartWidth = 0;
   double _chartHeight = 0;
   double _centerY = 0;
@@ -54,7 +51,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     super.didUpdateWidget(oldWidget);
   }
 
-  // ─── 自动适配 Y ────────────────────────────────────────
   void _autoFitY() {
     double minVal = double.infinity;
     double maxVal = double.negativeInfinity;
@@ -81,7 +77,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     });
   }
 
-  // ─── 自动适配 X ────────────────────────────────────────
   void _autoFitX() {
     int maxLen = 0;
     for (final p in widget.dataPoints.values) {
@@ -97,7 +92,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     });
   }
 
-  // ─── 重置视图 ──────────────────────────────────────────
   void _resetView() {
     setState(() {
       _scaleX = 1.0;
@@ -109,7 +103,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     });
   }
 
-  // ─── 矩形框选应用 ──────────────────────────────────────
   void _applyRectZoom() {
     if (_rectStart == null || _rectEnd == null) return;
 
@@ -123,7 +116,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     double rectTop = min(_rectStart!.dy, _rectEnd!.dy);
     double rectBottom = max(_rectStart!.dy, _rectEnd!.dy);
 
-    // 裁剪到绘图区
     rectLeft = max(rectLeft, _yAxisWidth);
     rectRight = min(rectRight, _yAxisWidth + _chartWidth);
     rectTop = max(rectTop, 0.0);
@@ -160,7 +152,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     });
   }
 
-  // ─── 滚轮缩放 ──────────────────────────────────────────
   void _handleWheel(PointerScrollEvent event) {
     setState(() {
       final zoomFactor = 0.1;
@@ -183,7 +174,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     });
   }
 
-  // ─── 手势处理 ──────────────────────────────────────────
   void _handlePanStart(DragStartDetails details) {
     if (_tool == ScopeTool.zoomRect) {
       setState(() {
@@ -201,7 +191,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
       return;
     }
 
-    // 平移模式
     setState(() {
       if (details.localPosition.dx < _yAxisWidth) {
         _offsetY += details.delta.dy;
@@ -218,7 +207,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
       return;
     }
 
-    // 平移模式松手：检查是否需要吸附回右侧
     int maxLen = 0;
     for (final p in widget.dataPoints.values) {
       if (p.length > maxLen) maxLen = p.length;
@@ -240,7 +228,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
   }
 
   void _handleSecondaryTap(TapUpDetails details) {
-    // 右键取消框选
     if (_tool == ScopeTool.zoomRect && _rectStart != null) {
       setState(() {
         _rectStart = null;
@@ -250,72 +237,6 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     }
   }
 
-  // ─── 工具栏 ────────────────────────────────────────────
-  Widget _buildToolbar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _toolBtn(Icons.open_with, ScopeTool.pan, '平移模式'),
-          _toolBtn(Icons.crop_free, ScopeTool.zoomRect, '框选缩放'),
-          _divider(),
-          _actionBtn(Icons.swap_vert, '自动适配 Y', _autoFitY),
-          _actionBtn(Icons.swap_horiz, '自动适配 X', _autoFitX),
-          _actionBtn(Icons.zoom_out_map, '重置视图', _resetView),
-        ],
-      ),
-    );
-  }
-
-  Widget _divider() {
-    return const SizedBox(
-      height: 18,
-      child: VerticalDivider(width: 1, color: Colors.white24),
-    );
-  }
-
-  Widget _toolBtn(IconData icon, ScopeTool tool, String tooltip) {
-    final isActive = _tool == tool;
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: () => setState(() => _tool = tool),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 1),
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: isActive ? Colors.blueAccent.withValues(alpha: 0.4) : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Icon(icon, size: 18, color: isActive ? Colors.lightBlueAccent : Colors.white70),
-        ),
-      ),
-    );
-  }
-
-  Widget _actionBtn(IconData icon, String tooltip, VoidCallback onTap) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 1),
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Icon(icon, size: 18, color: Colors.white70),
-        ),
-      ),
-    );
-  }
-
-  // ─── Build ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -377,13 +298,135 @@ class _InteractiveScopeState extends State<InteractiveScope> {
                 Positioned(
                   top: 4,
                   right: 4,
-                  child: _buildToolbar(),
+                  child: _ScopeToolbar(
+                    tool: _tool,
+                    onToolChanged: (t) => setState(() => _tool = t),
+                    onAutoFitY: _autoFitY,
+                    onAutoFitX: _autoFitX,
+                    onResetView: _resetView,
+                  ),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+// ─── 工具栏：独立 StatelessWidget，稳定子树 ───
+
+class _ScopeToolbar extends StatelessWidget {
+  final ScopeTool tool;
+  final ValueChanged<ScopeTool> onToolChanged;
+  final VoidCallback onAutoFitY;
+  final VoidCallback onAutoFitX;
+  final VoidCallback onResetView;
+
+  const _ScopeToolbar({
+    required this.tool,
+    required this.onToolChanged,
+    required this.onAutoFitY,
+    required this.onAutoFitX,
+    required this.onResetView,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToolBtn(
+            icon: Icons.open_with,
+            active: tool == ScopeTool.pan,
+            tooltip: '平移模式',
+            onTap: () => onToolChanged(ScopeTool.pan),
+          ),
+          _ToolBtn(
+            icon: Icons.crop_free,
+            active: tool == ScopeTool.zoomRect,
+            tooltip: '框选缩放',
+            onTap: () => onToolChanged(ScopeTool.zoomRect),
+          ),
+          const SizedBox(
+            height: 18,
+            child: VerticalDivider(width: 1, color: Colors.white24),
+          ),
+          _ActionBtn(icon: Icons.swap_vert, tooltip: '自动适配 Y', onTap: onAutoFitY),
+          _ActionBtn(icon: Icons.swap_horiz, tooltip: '自动适配 X', onTap: onAutoFitX),
+          _ActionBtn(icon: Icons.zoom_out_map, tooltip: '重置视图', onTap: onResetView),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolBtn extends StatelessWidget {
+  final IconData icon;
+  final bool active;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _ToolBtn({
+    required this.icon,
+    required this.active,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: active ? Colors.blueAccent.withValues(alpha: 0.4) : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(icon, size: 18, color: active ? Colors.lightBlueAccent : Colors.white70),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionBtn extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _ActionBtn({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(icon, size: 18, color: Colors.white70),
+        ),
+      ),
     );
   }
 }

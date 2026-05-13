@@ -12,7 +12,7 @@ class ChannelValueTile extends StatefulWidget {
     super.key,
     required this.varId,
     required this.name,
-    required this.color
+    required this.color,
   });
 
   @override
@@ -20,21 +20,19 @@ class ChannelValueTile extends StatefulWidget {
 }
 
 class _ChannelValueTileState extends State<ChannelValueTile> {
+  static const _nameStyle = TextStyle(color: Colors.white70, fontSize: 11);
+  static const _valueStyle = TextStyle(fontWeight: FontWeight.bold, fontFamily: 'monospace');
+
   Timer? _lowFreqTimer;
   double _displayValue = 0.0;
 
   @override
   void initState() {
     super.initState();
-    // 启动低频心跳：每 100ms 刷新一次数值显示
     _lowFreqTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (!mounted) return;
-
-      // 从 Provider 中直接读取当前值，不订阅监听
       final controller = context.read<DeviceController>();
       final newValue = controller.registry[widget.varId]?.value?.toDouble() ?? 0.0;
-
-      // 如果数值变了，才触发局部渲染
       if (newValue != _displayValue) {
         setState(() {
           _displayValue = newValue;
@@ -51,7 +49,6 @@ class _ChannelValueTileState extends State<ChannelValueTile> {
 
   @override
   Widget build(BuildContext context) {
-    // 这个 build 每一行每秒最多运行 10 次，性能开销极低
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
@@ -62,14 +59,10 @@ class _ChannelValueTileState extends State<ChannelValueTile> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.name, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                Text(widget.name, style: _nameStyle),
                 Text(
                   _displayValue.toStringAsFixed(2),
-                  style: TextStyle(
-                    color: widget.color,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'monospace'
-                  ),
+                  style: _valueStyle.copyWith(color: widget.color),
                 ),
               ],
             ),

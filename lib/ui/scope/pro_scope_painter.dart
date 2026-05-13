@@ -18,7 +18,6 @@ class ProScopePainter extends CustomPainter {
   final double xAxisHeight;
   final double deltaTime;
 
-  // 矩形框选
   final Offset? rectStart;
   final Offset? rectEnd;
 
@@ -38,61 +37,119 @@ class ProScopePainter extends CustomPainter {
     this.rectEnd,
   });
 
+  // ─── 复用的 Paint 对象（懒初始化，避免每帧 new）──────────
+  Paint? _gridPaint;
+  Paint? _bgPaint;
+  Paint? _axisLinePaint;
+  Paint? _cursorLinePaint;
+  Paint? _selFillPaint;
+  Paint? _selBorderPaint;
+
+  Paint get gridPaint => _gridPaint ??= (Paint()..color = Colors.white10..strokeWidth = 1);
+  Paint get bgPaint => _bgPaint ??= (Paint()..color = const Color(0xFF2D2D2D));
+  Paint get axisLinePaint => _axisLinePaint ??= (Paint()..color = Colors.white30);
+  Paint get cursorLinePaint => _cursorLinePaint ??= (Paint()..color = Colors.white70..strokeWidth = 1);
+  Paint get selFillPaint => _selFillPaint ??= (Paint()..color = Colors.blueAccent.withValues(alpha: 0.15)..style = PaintingStyle.fill);
+  Paint get selBorderPaint => _selBorderPaint ??= (Paint()..color = Colors.white54..strokeWidth = 1..style = PaintingStyle.stroke);
+
+  // 每通道复用的 Paint + Path
+  final List<Paint> _channelPaints = [];
+  final List<Path> _channelPaths = [];
+
+  Paint _channelPaint(int i) {
+    while (_channelPaints.length <= i) {
+      _channelPaints.add(Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5);
+    }
+    final p = _channelPaints[i];
+    p.color = colors[i % colors.length];
+    return p;
+  }
+
+  Path _channelPath(int i) {
+    while (_channelPaths.length <= i) {
+      _channelPaths.add(Path());
+    }
+    return _channelPaths[i]..reset();
+  }
+
+  // ─── 网格缓存 ──────────────────────────────────────────
+  Size? _cachedGridSize;
+  Rect? _cachedGridRect;
+  Path? _cachedGridPath;
+
+  Path _gridPath(Size size, Rect rect) {
+    if (_cachedGridPath != null &&
+        _cachedGridSize == size &&
+        _cachedGridRect == rect) {
+      return _cachedGridPath!;
+    }
+
+    final path = Path();
+    const stepX = 100.0;
+    const stepY = 50.0;
+
+    for (double x = rect.left; x < rect.right; x += stepX) {
+      path.moveTo(x, rect.top);
+      path.lineTo(x, rect.bottom);
+    }
+    for (double y = rect.top; y < rect.bottom; y += stepY) {
+      path.moveTo(rect.left, y);
+      path.lineTo(rect.right, y);
+    }
+
+    _cachedGridSize = size;
+    _cachedGridRect = rect;
+    _cachedGridPath = path;
+    return path;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final chartRect = Rect.fromLTWH(
       yAxisWidth, 0, size.width - yAxisWidth, size.height - xAxisHeight,
     );
 
-    _drawGrid(canvas, size, chartRect);
+    // 网格（缓存路径，仅 stroke 一次）
+    canvas.drawPath(_gridPath(size, chartRect), gridPaint);
 
     canvas.save();
     canvas.clipRect(chartRect);
 
-    // 绘制波形
+    // 波形
     for (int i = 0; i < ids.length; i++) {
       final id = ids[i];
       final points = allPoints[id];
       if (points == null || points.length == 0) continue;
-
-      final paint = Paint()
-        ..color = colors[i % colors.length]
-        ..strokeWidth = 1.5
-        ..style = PaintingStyle.stroke;
-
-      final path = Path();
-      bool isFirst = true;
 
       int startIndex = ((chartRect.left - offsetX) / scaleX).floor();
       int endIndex = ((chartRect.right - offsetX) / scaleX).ceil();
 
       if (startIndex < 0) startIndex = 0;
       if (endIndex > points.length - 1) endIndex = points.length - 1;
+      if (startIndex > endIndex) continue;
 
-      for (int j = startIndex; j <= endIndex; j++) {
-        double x = (j * scaleX) + offsetX;
-        double y = (size.height / 2) - (points[j] * scaleY * 20) + offsetY;
+      final path = _channelPath(i);
+      double x = (startIndex * scaleX) + offsetX;
+      double y = (size.height / 2) - (points[startIndex] * scaleY * 20) + offsetY;
+      path.moveTo(x, y);
 
-        if (isFirst) {
-          path.moveTo(x, y);
-          isFirst = false;
-        } else {
-          path.lineTo(x, y);
-        }
+      for (int j = startIndex + 1; j <= endIndex; j++) {
+        x = (j * scaleX) + offsetX;
+        y = (size.height / 2) - (points[j] * scaleY * 20) + offsetY;
+        path.lineTo(x, y);
       }
-      canvas.drawPath(path, paint);
+
+      canvas.drawPath(path, _channelPaint(i));
     }
 
-    // 绘制矩形选区（在波形之上、游标之下）
     _drawSelectionRect(canvas, chartRect);
-
-    // 绘制游标
     _drawCursor(canvas, size, chartRect);
 
     canvas.restore();
 
     // 坐标轴背景
-    final bgPaint = Paint()..color = const Color(0xFF2D2D2D);
     canvas.drawRect(Rect.fromLTWH(0, 0, yAxisWidth, size.height), bgPaint);
     canvas.drawRect(Rect.fromLTWH(0, size.height - xAxisHeight, size.width, xAxisHeight), bgPaint);
 
@@ -100,7 +157,6 @@ class ProScopePainter extends CustomPainter {
     _drawXAxis(canvas, size);
   }
 
-  // ─── 矩形选区绘制 ──────────────────────────────────────
   void _drawSelectionRect(Canvas canvas, Rect chartRect) {
     if (rectStart == null || rectEnd == null) return;
 
@@ -109,38 +165,22 @@ class ProScopePainter extends CustomPainter {
     double top = min(rectStart!.dy, rectEnd!.dy);
     double bottom = max(rectStart!.dy, rectEnd!.dy);
 
-    // 裁剪到绘图区
     left = max(left, chartRect.left);
     right = min(right, chartRect.right);
     top = max(top, chartRect.top);
     bottom = min(bottom, chartRect.bottom);
 
     final rect = Rect.fromLTRB(left, top, right, bottom);
-
-    // 半透明蓝底
-    final fillPaint = Paint()
-      ..color = Colors.blueAccent.withValues(alpha: 0.15)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(rect, fillPaint);
-
-    // 白色虚线边框
-    final borderPaint = Paint()
-      ..color = Colors.white54
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
-    canvas.drawRect(rect, borderPaint);
+    canvas.drawRect(rect, selFillPaint);
+    canvas.drawRect(rect, selBorderPaint);
   }
 
-  // ─── 游标 ──────────────────────────────────────────────
   void _drawCursor(Canvas canvas, Size size, Rect chartRect) {
     if (cursorX == null) return;
 
     double screenCursorX = (cursorX! * scaleX) + offsetX;
     if (screenCursorX < chartRect.left || screenCursorX > chartRect.right) return;
 
-    final cursorLinePaint = Paint()
-      ..color = Colors.white70
-      ..strokeWidth = 1;
     canvas.drawLine(
       Offset(screenCursorX, chartRect.top),
       Offset(screenCursorX, chartRect.bottom),
@@ -189,22 +229,8 @@ class ProScopePainter extends CustomPainter {
     }
   }
 
-  void _drawGrid(Canvas canvas, Size size, Rect rect) {
-    final paint = Paint()..color = Colors.white10..strokeWidth = 1;
-    const stepX = 100.0;
-    const stepY = 50.0;
-
-    for (double x = rect.left; x < rect.right; x += stepX) {
-      canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), paint);
-    }
-    for (double y = rect.top; y < rect.bottom; y += stepY) {
-      canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), paint);
-    }
-  }
-
   void _drawYAxis(Canvas canvas, Size size) {
     final tp = TextPainter(textDirection: TextDirection.ltr);
-    final linePaint = Paint()..color = Colors.white30;
 
     const stepPixels = 50.0;
     for (double y = 0; y < size.height - xAxisHeight; y += stepPixels) {
@@ -214,13 +240,12 @@ class ProScopePainter extends CustomPainter {
       tp.text = TextSpan(text: val.toStringAsFixed(1), style: const TextStyle(color: Colors.white60, fontSize: 10));
       tp.layout();
       tp.paint(canvas, Offset(5, y - 6));
-      canvas.drawLine(Offset(yAxisWidth - 5, y), Offset(yAxisWidth, y), linePaint);
+      canvas.drawLine(Offset(yAxisWidth - 5, y), Offset(yAxisWidth, y), axisLinePaint);
     }
   }
 
   void _drawXAxis(Canvas canvas, Size size) {
     final tp = TextPainter(textDirection: TextDirection.ltr);
-    final linePaint = Paint()..color = Colors.white30;
 
     double stepPixels = 100 * scaleX;
     if (stepPixels < 80) stepPixels = 100;
@@ -239,10 +264,26 @@ class ProScopePainter extends CustomPainter {
       tp.text = TextSpan(text: label, style: const TextStyle(color: Colors.white60, fontSize: 10));
       tp.layout();
       tp.paint(canvas, Offset(x - 10, size.height - xAxisHeight + 5));
-      canvas.drawLine(Offset(x, size.height - xAxisHeight), Offset(x, size.height - xAxisHeight + 5), linePaint);
+      canvas.drawLine(Offset(x, size.height - xAxisHeight), Offset(x, size.height - xAxisHeight + 5), axisLinePaint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant ProScopePainter old) => true;
+  bool shouldRepaint(covariant ProScopePainter old) {
+    if (scaleX != old.scaleX ||
+        scaleY != old.scaleY ||
+        offsetX != old.offsetX ||
+        offsetY != old.offsetY ||
+        cursorX != old.cursorX ||
+        rectStart != old.rectStart ||
+        rectEnd != old.rectEnd ||
+        deltaTime != old.deltaTime) {
+      return true;
+    }
+    // 检查是否有新数据到达（通过 buffer 长度变化）
+    for (final id in ids) {
+      if (allPoints[id]?.length != old.allPoints[id]?.length) return true;
+    }
+    return false;
+  }
 }
