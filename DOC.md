@@ -64,7 +64,7 @@ flowave list-vars
 
 | 命令 | 说明 |
 |------|------|
-| `flowave register <addr> <name> <type> [--highfreq] [--static]` | 注册变量 |
+| `flowave register <addr> <name> <type> [--highfreq] [--static] [--peri]` | 注册变量 |
 | `flowave write <varId> <value> <type>` | 修改变量值 |
 | `flowave refresh <varId>` | 刷新静态变量 |
 | `flowave refresh-all` | 刷新所有静态变量 |
@@ -92,6 +92,9 @@ flowave register 0x20001000 voltage 6 --highfreq
 
 # 注册静态变量
 flowave register 0x20003000 threshold 6 --static
+
+# 注册外设静态变量
+flowave register 0x20004000 imu_accel 6 --static --peri
 
 # 修改变量
 flowave write 1 3.14159 6
@@ -213,7 +216,7 @@ Demo 模式无需真实串口设备，可快速验证所有功能。
 | `/connect` | POST | 连接串口 | `{"port":"COM3","baud":115200}` |
 | `/disconnect` | POST | 断开串口 | `{}` |
 | `/handshake` | POST | 握手 | `{}` |
-| `/register` | POST | 注册变量 | `{"addr":...,"name":...,"type":...,"isHighFreq":false,"isStatic":false}` |
+| `/register` | POST | 注册变量 | `{"addr":...,"name":...,"type":...,"isHighFreq":false,"isStatic":false,"isPeri":false}` |
 | `/write` | POST | 修改变量 | `{"varId":1,"value":3.14,"type":6}` |
 | `/refresh` | POST | 刷新单个静态变量 | `{"varId":1}` |
 | `/refresh-all` | POST | 刷新全部静态变量 | `{}` |
@@ -232,6 +235,35 @@ Demo 模式无需真实串口设备，可快速验证所有功能。
 
 ---
 
+## 示波器功能
+
+### 通道开关
+- 侧边栏每个通道右侧有眼睛图标，点击可切换通道显示/隐藏
+- 隐藏的通道在侧边栏显示为半透明，波形图中不绘制
+- 隐藏通道的数据缓冲区持续运行，重新开启后立即恢复显示
+
+### 浮点数显示格式
+每个 float 类型（type=6）通道可独立切换数值显示格式：
+| 格式 | 侧边栏指示 | 示例 | 说明 |
+|------|-----------|------|------|
+| 普通 | `F` | `3.14` | 保留两位小数 |
+| 科学计数 | `Sci` | `1.235e+02` | 保留三位小数的科学计数法 |
+
+- 侧边栏中 float 通道右侧有格式切换按钮（`F` / `Sci`），点击循环切换
+- 游标读数也遵循各通道的显示格式
+
+### 整数显示格式
+每个整数类型（type 0-5）通道可独立切换数值显示格式：
+| 格式 | 侧边栏指示 | 示例 | 说明 |
+|------|-----------|------|------|
+| 十进制 | `Dec` | `255` | 标准十进制整数 |
+| 十六进制 | `Hex` | `0xFF` | 大写十六进制 |
+| 二进制 | `Bin` | `0b11111111` | 二进制表示 |
+
+- 侧边栏中整数通道右侧有格式切换按钮（`Dec` → `Hex` → `Bin`），点击循环切换
+- 游标读数也遵循各通道的显示格式
+
+---
 ## 编译
 
 ```bash

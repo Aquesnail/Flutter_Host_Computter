@@ -116,7 +116,9 @@ MainWindow (AppBar 区域)
 ### 2.4 示波器交互 (`InteractiveScope`)
 - **工具模式**（`ScopeTool` 枚举）：`pan` 为平移拖拽、`zoomRect` 为矩形框选缩放，通过工具栏按钮手动切换，模式持久保持
 - **浮动工具栏**：右上角半透明背景，提供平移、框选缩放、自动适配 Y、自动适配 X、重置视图五个按钮
-- **自动适配 Y**：扫描全部通道数据的最大/最小幅值，自动调整垂直缩放和偏移
+- **通道开关**：侧边栏每个通道有眼睛图标，可独立开关通道显示，隐藏通道数据仍在后台收集
+- **显示格式切换**：float 通道支持普通（两位小数）和科学计数法（三位小数）切换；整数通道支持十进制、十六进制、二进制三种显示格式切换
+- **自动适配 Y**：扫描可见通道数据的最大/最小幅值，自动调整垂直缩放和偏移
 - **自动适配 X**：根据数据总长度自动调整水平缩放，使全部数据可见
 - **矩形框选**：左键拖拽画框、右键取消，松手后根据框选区域反算数据坐标并应用缩放，< 5px 忽略
 - **手势分区**：Y 轴区域（左侧 50px）的拖拽/滚轮仅影响垂直方向，其余区域影响水平方向
@@ -316,7 +318,8 @@ lib/
     └── scope/
         ├── channel_value_tile.dart
         ├── interactive_scope.dart
-        └── pro_scope_painter.dart
+        ├── pro_scope_painter.dart
+        └── value_display_format.dart
     └── attitude/
         ├── attitude_indicator.dart
         └── attitude_window.dart

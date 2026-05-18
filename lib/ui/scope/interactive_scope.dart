@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../../ring_buffer.dart';
 import 'pro_scope_painter.dart';
+import 'value_display_format.dart';
 
 enum ScopeTool { pan, zoomRect }
 
@@ -11,6 +12,8 @@ class InteractiveScope extends StatefulWidget {
   final List<int> varIds;
   final List<Color> colors;
   final double deltaTime;
+  final Map<int, ValueDisplayFormat> displayFormats;
+  final Map<int, IntDisplayFormat> intDisplayFormats;
 
   const InteractiveScope({
     super.key,
@@ -18,6 +21,8 @@ class InteractiveScope extends StatefulWidget {
     required this.varIds,
     required this.colors,
     this.deltaTime = 1.0,
+    this.displayFormats = const {},
+    this.intDisplayFormats = const {},
   });
 
   @override
@@ -290,6 +295,8 @@ class _InteractiveScopeState extends State<InteractiveScope> {
                         deltaTime: widget.deltaTime,
                         rectStart: _rectStart,
                         rectEnd: _rectEnd,
+                        displayFormats: widget.displayFormats,
+                        intDisplayFormats: widget.intDisplayFormats,
                       ),
                       size: Size.infinite,
                     ),

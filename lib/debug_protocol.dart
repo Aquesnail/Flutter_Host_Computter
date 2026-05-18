@@ -10,6 +10,7 @@ enum VariableType {
 class DebugProtocol {
   static const int maskFreq = 0x10; // 第4位 (0001 0000) - 高频标志
   static const int maskStatic = 0x20; // 第5位 (0010 0000) - 静态变量标志
+  static const int maskPeri = 0x40; // 第6位 (0100 0000) - 外设变量标志
   static const int maskType = 0x0F; // 低4位 (0000 1111) 用于原始类型
 
   // --- CRC16-MODBUS ---
@@ -77,16 +78,19 @@ class DebugProtocol {
   // --- 2. 构建动态注册指令 (CMD 0x56) ---
   // 【修改点】移除 memType，地址改为 4 字节，增加 isHighFreq 和 isStatic
   static Uint8List packRegisterCmd(int address, String name, int varType,
-      {bool isHighFreq = false, bool isStatic = false}) {
+      {bool isHighFreq = false, bool isStatic = false, bool isPeri = false}) {
     final inner = BytesBuilder();
 
-    // 组合 Type、Freq 标志和 Static 标志
+    // 组合 Type、Freq 标志、Static 标志和 Peri 标志
     int typeByte = (varType & maskType);
     if (isHighFreq) {
       typeByte |= maskFreq; // 置位第4位
     }
     if (isStatic) {
       typeByte |= maskStatic; // 置位第5位
+    }
+    if (isPeri) {
+      typeByte |= maskPeri; // 置位第6位
     }
     inner.addByte(typeByte);
 

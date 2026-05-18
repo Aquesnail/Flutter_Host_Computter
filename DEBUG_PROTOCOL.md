@@ -105,6 +105,7 @@ Uint8List frame = DebugProtocol.packWriteCmd(3, 4, 3.14, 6);
 - 低4位 (maskType=0x0F): 变量类型值 (0-6)
 - 第4位 (maskFreq=0x10): 高频刷新标志 (1=高频，0=低频)
 - 第5位 (maskStatic=0x20): 静态变量标志 (1=静态，0=普通)
+- 第6位 (maskPeri=0x40): 外设变量标志 (1=外设，0=内存)
 
 **参数说明：**
 - `address`: 变量内存地址 (32位)
@@ -112,6 +113,7 @@ Uint8List frame = DebugProtocol.packWriteCmd(3, 4, 3.14, 6);
 - `varType`: 变量类型值 (0-6)
 - `isHighFreq`: 是否为高频变量 (默认false)
 - `isStatic`: 是否为静态变量 (默认false)
+- `isPeri`: 是否为外设变量 (默认false)
 
 **使用方式：**
 ```dart
@@ -123,6 +125,9 @@ Uint8List frame = DebugProtocol.packRegisterCmd(0x20002000, "voltage", 6, isHigh
 
 // 注册一个静态变量
 Uint8List frame = DebugProtocol.packRegisterCmd(0x20003000, "config", 0, isStatic: true);
+
+// 注册一个外设静态变量 (I2C/SPI 等)
+Uint8List frame = DebugProtocol.packRegisterCmd(0x20004000, "sensor", 6, isStatic: true, isPeri: true);
 ```
 
 ### 4. 文本命令 (CMD: 0x57)
@@ -162,6 +167,7 @@ Uint8List frame = DebugProtocol.packStaticRefreshCmd(5);
 |--------|-----|------|
 | maskFreq | 0x10 (0001 0000) | 高频标志掩码 (第4位) |
 | maskStatic | 0x20 (0010 0000) | 静态变量标志掩码 (第5位) |
+| maskPeri | 0x40 (0100 0000) | 外设变量标志掩码 (第6位) |
 | maskType | 0x0F (0000 1111) | 类型掩码 (低4位) |
 
 ## 使用示例
@@ -188,6 +194,15 @@ Uint8List staticVarFrame = DebugProtocol.packRegisterCmd(
   isStatic: true
 );
 
+// 3b. 注册外设静态变量 (I2C/SPI 等)
+Uint8List periVarFrame = DebugProtocol.packRegisterCmd(
+  0x20004000,
+  "imu_accel_x",
+  6,  // float
+  isStatic: true,
+  isPeri: true
+);
+
 // 4. 修改变量值
 Uint8List writeFrame = DebugProtocol.packWriteCmd(1, 2, 1500, 2); // uint16=1500
 
@@ -212,10 +227,12 @@ Uint8List textFrame = DebugProtocol.packTextCmd("System ready");
 - 配置参数（如校准系数、阈值设定）
 - 不常变化的状态（如设备型号、固件版本）
 - 需要避免频繁传输的常量数据
+- 外设变量（I2C/SPI 等），设置 `isPeri=true` 时自动强制 `isStatic=true`，读写时下位机通过回调访问外设
 
 **注意事项：**
 - 静态变量与高频标志互斥，设置 `isStatic=true` 时自动禁用高频
 - 静态变量的值不会自动更新，需要调用 `packStaticRefreshCmd()` 主动请求
+- 外设变量必须是静态变量，如果下位机误传 `isPeri=true` 而未设置 `isStatic=true`，上位机会自动修正并记录警告日志
 
 ## 下位机数据上报格式
 
@@ -270,3 +287,4 @@ Uint8List textFrame = DebugProtocol.packTextCmd("System ready");
 - 类型字节现在包含高频刷新标志位 (第4位)
 - 类型字节新增静态变量标志位 (第5位)，支持 `isStatic` 参数
 - 新增请求刷新静态变量命令 (0x58)
+- 类型字节新增外设变量标志位 (第6位 maskPeri=0x40)，支持 `isPeri` 参数。外设变量强制为静态变量。

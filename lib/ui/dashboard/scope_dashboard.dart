@@ -6,6 +6,7 @@ import '../../core/models/registered_var.dart';
 import '../../ring_buffer.dart';
 import '../scope/channel_value_tile.dart';
 import '../scope/interactive_scope.dart';
+import '../scope/value_display_format.dart';
 
 // ─── 波形区独立组件：自行管理数据流 & 60Hz 刷新，不拖累整棵 ScopeDashboard 树 ───
 
@@ -14,6 +15,8 @@ class _ScopeChart extends StatefulWidget {
   final List<Color> colors;
   final double deltaTime;
   final int bufferSize;
+  final Map<int, ValueDisplayFormat> displayFormats;
+  final Map<int, IntDisplayFormat> intDisplayFormats;
 
   const _ScopeChart({
     super.key,
@@ -21,6 +24,8 @@ class _ScopeChart extends StatefulWidget {
     required this.colors,
     required this.deltaTime,
     required this.bufferSize,
+    this.displayFormats = const {},
+    this.intDisplayFormats = const {},
   });
 
   @override
@@ -79,6 +84,8 @@ class _ScopeChartState extends State<_ScopeChart> {
       varIds: widget.varIds,
       colors: widget.colors,
       deltaTime: widget.deltaTime,
+      displayFormats: widget.displayFormats,
+      intDisplayFormats: widget.intDisplayFormats,
     );
   }
 }
@@ -97,6 +104,10 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
 
   int _bufferSize = 2000;
   double _deltaTime = 20.0;
+
+  final Set<int> _hiddenChannelIds = {};
+  Map<int, ValueDisplayFormat> _channelDisplayFormats = {};
+  Map<int, IntDisplayFormat> _channelIntDisplayFormats = {};
 
   late TextEditingController _bufferCtrl;
   late TextEditingController _dtCtrl;
@@ -140,24 +151,80 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
     _chartKey.currentState?.clear();
   }
 
+  void _toggleChannel(int varId) {
+    setState(() {
+      if (_hiddenChannelIds.contains(varId)) {
+        _hiddenChannelIds.remove(varId);
+      } else {
+        _hiddenChannelIds.add(varId);
+      }
+    });
+  }
+
+  void _toggleFormat(int varId) {
+    setState(() {
+      final newFormats = Map<int, ValueDisplayFormat>.of(_channelDisplayFormats);
+      final current = newFormats[varId] ?? ValueDisplayFormat.normal;
+      newFormats[varId] = current == ValueDisplayFormat.normal
+          ? ValueDisplayFormat.scientific
+          : ValueDisplayFormat.normal;
+      _channelDisplayFormats = newFormats;
+    });
+  }
+
+  void _toggleIntFormat(int varId) {
+    setState(() {
+      final newFormats = Map<int, IntDisplayFormat>.of(_channelIntDisplayFormats);
+      final current = newFormats[varId] ?? IntDisplayFormat.decimal;
+      IntDisplayFormat next;
+      switch (current) {
+        case IntDisplayFormat.decimal:
+          next = IntDisplayFormat.hex;
+        case IntDisplayFormat.hex:
+          next = IntDisplayFormat.binary;
+        case IntDisplayFormat.binary:
+          next = IntDisplayFormat.decimal;
+      }
+      newFormats[varId] = next;
+      _channelIntDisplayFormats = newFormats;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 用稳定的指纹做 selector，避免每次 notifyListeners 都因 new list instance 触发重建
     final highFreqVars = _selectHighFreqVars(context);
+
+    final visibleVars = highFreqVars.where((v) => !_hiddenChannelIds.contains(v.id)).toList();
+    final visibleColors = <Color>[];
+    for (final v in visibleVars) {
+      final originalIndex = highFreqVars.indexWhere((hv) => hv.id == v.id);
+      visibleColors.add(colors[originalIndex % colors.length]);
+    }
 
     return Column(
       children: [
         Expanded(
           child: Row(
             children: [
-              _Sidebar(highFreqVars: highFreqVars, colors: colors),
+              _Sidebar(
+                highFreqVars: highFreqVars,
+                colors: colors,
+                hiddenChannelIds: _hiddenChannelIds,
+                channelDisplayFormats: _channelDisplayFormats,
+                channelIntDisplayFormats: _channelIntDisplayFormats,
+                onToggleChannel: _toggleChannel,
+                onToggleFormat: _toggleFormat,
+                onToggleIntFormat: _toggleIntFormat,
+              ),
               Expanded(
                 child: _ScopeChart(
                   key: _chartKey,
-                  varIds: highFreqVars.map((e) => e.id).toList(),
-                  colors: colors,
+                  varIds: visibleVars.map((e) => e.id).toList(),
+                  colors: visibleColors,
                   deltaTime: _deltaTime,
                   bufferSize: _bufferSize,
+                  displayFormats: _channelDisplayFormats,
+                  intDisplayFormats: _channelIntDisplayFormats,
                 ),
               ),
             ],
@@ -248,18 +315,33 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
   }
 }
 
-// ─── 侧边栏独立 StatelessWidget：被 const 保护，仅在变量列表变化时重建 ───
+// ─── 侧边栏：显示所有高频通道，支持开关和格式切换 ───
 
 class _Sidebar extends StatelessWidget {
   final List<RegisteredVar> highFreqVars;
   final List<Color> colors;
+  final Set<int> hiddenChannelIds;
+  final Map<int, ValueDisplayFormat> channelDisplayFormats;
+  final Map<int, IntDisplayFormat> channelIntDisplayFormats;
+  final void Function(int) onToggleChannel;
+  final void Function(int) onToggleFormat;
+  final void Function(int) onToggleIntFormat;
 
-  const _Sidebar({required this.highFreqVars, required this.colors});
+  const _Sidebar({
+    required this.highFreqVars,
+    required this.colors,
+    required this.hiddenChannelIds,
+    required this.channelDisplayFormats,
+    required this.channelIntDisplayFormats,
+    required this.onToggleChannel,
+    required this.onToggleFormat,
+    required this.onToggleIntFormat,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 160,
+      width: 170,
       decoration: BoxDecoration(
         color: const Color(0xFF252526),
         border: Border(right: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
@@ -277,11 +359,19 @@ class _Sidebar extends StatelessWidget {
               itemCount: highFreqVars.length,
               itemBuilder: (ctx, i) {
                 final v = highFreqVars[i];
+                final isFloat = v.type == 6;
                 return ChannelValueTile(
                   key: ValueKey(v.id),
                   varId: v.id,
                   name: v.name,
                   color: colors[i % colors.length],
+                  isVisible: !hiddenChannelIds.contains(v.id),
+                  displayFormat: channelDisplayFormats[v.id] ?? ValueDisplayFormat.normal,
+                  intDisplayFormat: channelIntDisplayFormats[v.id] ?? IntDisplayFormat.decimal,
+                  isFloat: isFloat,
+                  onToggleVisibility: () => onToggleChannel(v.id),
+                  onToggleFormat: isFloat ? () => onToggleFormat(v.id) : null,
+                  onToggleIntFormat: !isFloat ? () => onToggleIntFormat(v.id) : null,
                 );
               },
             ),

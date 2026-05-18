@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../ring_buffer.dart';
+import 'value_display_format.dart';
 
 class ProScopePainter extends CustomPainter {
   final Map<int, RingBuffer> allPoints;
@@ -21,6 +22,9 @@ class ProScopePainter extends CustomPainter {
   final Offset? rectStart;
   final Offset? rectEnd;
 
+  final Map<int, ValueDisplayFormat> displayFormats;
+  final Map<int, IntDisplayFormat> intDisplayFormats;
+
   ProScopePainter({
     required this.allPoints,
     required this.ids,
@@ -35,6 +39,8 @@ class ProScopePainter extends CustomPainter {
     required this.deltaTime,
     this.rectStart,
     this.rectEnd,
+    this.displayFormats = const {},
+    this.intDisplayFormats = const {},
   });
 
   // ─── 复用的 Paint 对象（懒初始化，避免每帧 new）──────────
@@ -211,9 +217,14 @@ class ProScopePainter extends CustomPainter {
           canvas.drawCircle(Offset(screenCursorX, screenY), 4, Paint()..color = color);
           canvas.drawCircle(Offset(screenCursorX, screenY), 2, Paint()..color = Colors.black);
 
+          final intFmt = intDisplayFormats[id];
+          final displayText = intFmt != null
+              ? formatIntValue(value, intFmt)
+              : formatValue(value, displayFormats[id] ?? ValueDisplayFormat.normal);
+
           final valTp = TextPainter(
             text: TextSpan(
-              text: value.toStringAsFixed(2),
+              text: displayText,
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 10,
@@ -277,10 +288,11 @@ class ProScopePainter extends CustomPainter {
         cursorX != old.cursorX ||
         rectStart != old.rectStart ||
         rectEnd != old.rectEnd ||
-        deltaTime != old.deltaTime) {
+        deltaTime != old.deltaTime ||
+        displayFormats != old.displayFormats ||
+        intDisplayFormats != old.intDisplayFormats) {
       return true;
     }
-    // 检查是否有新数据到达（通过 buffer 长度变化）
     for (final id in ids) {
       if (allPoints[id]?.length != old.allPoints[id]?.length) return true;
     }

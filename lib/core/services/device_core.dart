@@ -320,10 +320,18 @@ class DeviceCore {
         int realType = regRawType & DebugProtocol.maskType;
         bool isHigh = (regRawType & DebugProtocol.maskFreq) != 0;
         bool isStatic = (regRawType & DebugProtocol.maskStatic) != 0;
+        bool isPeri = (regRawType & DebugProtocol.maskPeri) != 0;
+
+        // 外设变量只可能是静态变量，如果下位机写错了，强制修正
+        if (isPeri && !isStatic) {
+          _addLog(LogType.info,
+              "Warning: Peri var '$name' (ID=$regId) missing static flag, forcing isStatic=true");
+          isStatic = true;
+        }
 
         bool isNew = !registry.containsKey(regId);
         RegisteredVar newVar = RegisteredVar(regId, name, realType, regAddr,
-            isHighFreq: isHigh, isStatic: isStatic);
+            isHighFreq: isHigh, isStatic: isStatic, isPeri: isPeri);
 
         if (isNew) {
           if (isHigh) {
@@ -518,6 +526,7 @@ class DeviceCore {
       "type": v.type,
       "addr": v.addr,
       "value": v.value,
+      "isPeri": v.isPeri,
     }).toList();
 
     final json = {
@@ -544,12 +553,17 @@ class DeviceCore {
       final type = item["type"] as int;
       final addr = item["addr"] as int;
       final value = item["value"];
+      final isPeri = (item["isPeri"] as bool?) ?? false;
 
       if (registry.containsKey(id)) {
-        registry[id] = RegisteredVar(id, name, type, addr, isStatic: true)..value = value;
+        registry[id] = RegisteredVar(id, name, type, addr,
+            isStatic: true, isPeri: isPeri)
+          ..value = value;
         loadedCount++;
       } else {
-        registry[id] = RegisteredVar(id, name, type, addr, isStatic: true)..value = value;
+        registry[id] = RegisteredVar(id, name, type, addr,
+            isStatic: true, isPeri: isPeri)
+          ..value = value;
         loadedCount++;
       }
     }

@@ -79,6 +79,7 @@ void main(List<String> args) {
     ..addFlag('highfreq', defaultsTo: false)
     ..addFlag('log', defaultsTo: false)
     ..addFlag('static', defaultsTo: false)
+    ..addFlag('peri', defaultsTo: false)
     ..addOption('timeout', defaultsTo: '0')
     ..addOption('window', defaultsTo: '100')
     ..addOption('duration', defaultsTo: '4')
@@ -223,6 +224,7 @@ void _handleRegister(List<String> args, ArgResults opts) {
     'type': type,
     'isHighFreq': opts['highfreq'] as bool,
     'isStatic': opts['static'] as bool,
+    'isPeri': opts['peri'] as bool,
   });
 }
 
@@ -364,7 +366,7 @@ void _printUsage() {
   print('  handshake             Perform handshake with device');
   print('');
   print('Variables:');
-  print('  register <addr> <name> <type>  Register a variable (--highfreq, --static)');
+  print('  register <addr> <name> <type>  Register a variable (--highfreq, --static, --peri)');
   print('  write <varId> <value> <type>   Write variable value');
   print('  refresh <varId>               Request static variable refresh');
   print('  refresh-all                   Refresh all static variables');

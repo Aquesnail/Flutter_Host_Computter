@@ -147,12 +147,13 @@ class HttpApi {
     final type = body['type'] as int?;
     final isHighFreq = (body['isHighFreq'] as bool?) ?? false;
     final isStatic = (body['isStatic'] as bool?) ?? false;
+    final isPeri = (body['isPeri'] as bool?) ?? false;
     if (addr == null || name == null || type == null) {
       _respondJson(request.response, 400, {'status': 'error', 'message': 'Missing addr/name/type'});
       return;
     }
-    _core.sendData(DebugProtocol.packRegisterCmd(addr, name, type, isHighFreq: isHighFreq, isStatic: isStatic));
-    _respondJson(request.response, 200, {'status': 'ok', 'addr': '0x${addr.toRadixString(16).toUpperCase()}', 'name': name, 'type': type, 'isHighFreq': isHighFreq, 'isStatic': isStatic});
+    _core.sendData(DebugProtocol.packRegisterCmd(addr, name, type, isHighFreq: isHighFreq, isStatic: isStatic, isPeri: isPeri));
+    _respondJson(request.response, 200, {'status': 'ok', 'addr': '0x${addr.toRadixString(16).toUpperCase()}', 'name': name, 'type': type, 'isHighFreq': isHighFreq, 'isStatic': isStatic, 'isPeri': isPeri});
   }
 
   Future<void> _handleWrite(HttpRequest request) async {
@@ -197,6 +198,7 @@ class HttpApi {
       'value': v.value,
       'isHighFreq': v.isHighFreq,
       'isStatic': v.isStatic,
+      'isPeri': v.isPeri,
     }).toList();
     _respondJson(request.response, 200, vars);
   }

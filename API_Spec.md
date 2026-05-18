@@ -15,6 +15,7 @@ class RegisteredVar {
   final int addr;
   final bool isHighFreq;
   final bool isStatic;
+  final bool isPeri;   // 是否外设变量
   dynamic value;
 
   RegisteredVar(
@@ -25,6 +26,7 @@ class RegisteredVar {
     this.value = 0,
     this.isHighFreq = false,
     this.isStatic = false,
+    this.isPeri = false,
   });
 }
 ```
@@ -62,11 +64,12 @@ enum VariableType { uint8, int8, uint16, int16, uint32, int32, float }
 |----------|------|------|
 | `maskFreq` | `static const int maskFreq = 0x10` | 高频标志位 |
 | `maskStatic` | `static const int maskStatic = 0x20` | 静态变量标志位 |
+| `maskPeri` | `static const int maskPeri = 0x40` | 外设变量标志位 |
 | `maskType` | `static const int maskType = 0x0F` | 类型掩码（低4位） |
 | `calcCrc` | `static int calcCrc(List<int> data)` | CRC16-MODBUS 计算 |
 | `packHandshake` | `static Uint8List packHandshake()` | 构建握手帧 (CMD=0x00) |
 | `packWriteCmd` | `static Uint8List packWriteCmd(int varId, int varLen, dynamic value, int varTypeInt)` | 修改变量帧 (CMD=0x55) |
-| `packRegisterCmd` | `static Uint8List packRegisterCmd(int address, String name, int varType, {bool isHighFreq = false, bool isStatic = false})` | 动态注册帧 (CMD=0x56) |
+| `packRegisterCmd` | `static Uint8List packRegisterCmd(int address, String name, int varType, {bool isHighFreq = false, bool isStatic = false, bool isPeri = false})` | 动态注册帧 (CMD=0x56) |
 | `packTextCmd` | `static Uint8List packTextCmd(String text)` | 文本发送帧 (CMD=0x57) |
 | `packStaticRefreshCmd` | `static Uint8List packStaticRefreshCmd(int varId)` | 请求刷新静态变量 (CMD=0x58) |
 
@@ -206,6 +209,25 @@ class SerialTrafficMonitor extends StatefulWidget
 
 ### 5.3 示波器相关 (`ui/dashboard/scope_dashboard.dart` + `ui/scope/`)
 
+#### `ValueDisplayFormat` (`ui/scope/value_display_format.dart`)
+```dart
+enum ValueDisplayFormat { normal, scientific }
+
+String formatValue(double value, ValueDisplayFormat format);
+```
+- `normal`: `toStringAsFixed(2)` — 保留两位小数，如 `3.14`
+- `scientific`: `toStringAsExponential(3)` — 保留三位小数的科学计数法，如 `1.235e+02`
+
+`IntDisplayFormat` — 整数显示格式
+```dart
+enum IntDisplayFormat { decimal, hex, binary }
+
+String formatIntValue(double value, IntDisplayFormat format);
+```
+- `decimal`: 十进制整数，如 `255`
+- `hex`: 十六进制（`0x` 前缀，大写），如 `0xFF`
+- `binary`: 二进制（`0b` 前缀），如 `0b11111111`
+
 #### `ScopeDashboard` (`ui/dashboard/scope_dashboard.dart`)
 ```dart
 class ScopeDashboard extends StatefulWidget
@@ -225,6 +247,7 @@ class InteractiveScope extends StatefulWidget {
     required List<int> varIds,
     required List<Color> colors,
     double deltaTime = 1.0,
+    Map<int, ValueDisplayFormat> displayFormats = const {},
   });
 }
 ```
@@ -253,10 +276,14 @@ class ProScopePainter extends CustomPainter {
     required double deltaTime,
     Offset? rectStart,
     Offset? rectEnd,
+    Map<int, ValueDisplayFormat> displayFormats = const {},
+    Map<int, IntDisplayFormat> intDisplayFormats = const {},
   });
 }
 ```
 - 说明：自定义绘制网格、波形、游标、坐标轴刻度与标签、矩形选区叠加（蓝色半透明填充 + 白色边框）。仅绘制可见索引范围内的点以优化性能。
+- `displayFormats`：各 float 通道的数值显示格式映射。
+- `intDisplayFormats`：各整数通道的数值显示格式映射，优先于 `displayFormats`。
 
 #### `ChannelValueTile` (`ui/scope/channel_value_tile.dart`)
 ```dart
@@ -266,10 +293,23 @@ class ChannelValueTile extends StatefulWidget {
     required int varId,
     required String name,
     required Color color,
+    bool isVisible = true,
+    ValueDisplayFormat displayFormat = ValueDisplayFormat.normal,
+    bool isFloat = false,
+    required VoidCallback onToggleVisibility,
+    VoidCallback? onToggleFormat,
+    VoidCallback? onToggleIntFormat,
   });
 }
 ```
 - 说明：以 100ms 周期轮询 `registry[varId]?.value`，仅在数值变化时触发局部 `setState`。
+- `isVisible`：控制通道波形是否在示波器中显示，`false` 时 tile 半透明。
+- `displayFormat`：float 通道的数值显示格式。
+- `intDisplayFormat`：整数通道的数值显示格式（decimal / hex / binary）。
+- `isFloat`：标记通道类型，为 `true` 时显示浮点格式按钮（`F`/`Sci`），否则显示整数格式按钮（`Dec`/`Hex`/`Bin`）。
+- `onToggleVisibility`：点击眼睛图标回调。
+- `onToggleFormat`：点击浮点格式标签回调（仅 float 通道）。
+- `onToggleIntFormat`：点击整数格式标签回调（仅整数通道）。
 
 ---
 
@@ -416,7 +456,7 @@ class HttpApi {
 | `/connect` | POST | 连接串口，body: `{"port":"COM3","baud":115200}` | ✓ |
 | `/disconnect` | POST | 断开串口 | ✓ |
 | `/handshake` | POST | 握手，返回 `{"status":"ok","success":true}` | ✓ |
-| `/register` | POST | 注册变量，body: `{"addr":...,"name":...,"type":...,"isHighFreq":false,"isStatic":false}` | ✓ |
+| `/register` | POST | 注册变量，body: `{"addr":...,"name":...,"type":...,"isHighFreq":false,"isStatic":false,"isPeri":false}` | ✓ |
 | `/write` | POST | 修改变量值，body: `{"varId":1,"value":3.14,"type":6}` | ✓ |
 | `/refresh` | POST | 请求刷新单个静态变量，body: `{"varId":1}` | ✓ |
 | `/refresh-all` | POST | 请求刷新所有静态变量 | ✓ |

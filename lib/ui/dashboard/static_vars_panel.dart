@@ -436,6 +436,7 @@ class _StaticVarTileState extends State<StaticVarTile> {
   String _nameDisplay = "";
   String _typeStr = "";
   String _addrStr = "";
+  bool _isPeri = false;
 
   @override
   void initState() {
@@ -458,7 +459,8 @@ class _StaticVarTileState extends State<StaticVarTile> {
         : v.value.toString();
 
     if (newValStr != _valueDisplay ||
-        v.name != _nameDisplay) {
+        v.name != _nameDisplay ||
+        v.isPeri != _isPeri) {
       final newTypeStr = v.type < VariableType.values.length
           ? VariableType.values[v.type].displayName
           : "Unknown";
@@ -470,6 +472,7 @@ class _StaticVarTileState extends State<StaticVarTile> {
         _nameDisplay = v.name;
         _typeStr = newTypeStr;
         _addrStr = newAddrStr;
+        _isPeri = v.isPeri;
       });
     }
   }
@@ -611,12 +614,37 @@ class _StaticVarTileState extends State<StaticVarTile> {
           ),
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Text(
-          "0x$_addrStr | $_typeStr",
-          style: TextStyle(
-            fontSize: 10,
-            color: colorScheme.onSurface.withValues(alpha: 0.6),
-          ),
+        subtitle: Row(
+          children: [
+            Text(
+              "0x$_addrStr | $_typeStr",
+              style: TextStyle(
+                fontSize: 10,
+                color: colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+            if (_isPeri)
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(
+                        color: Colors.purple.withValues(alpha: 0.5)),
+                  ),
+                  child: const Text(
+                    "PERI",
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.purple,
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+          ],
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
