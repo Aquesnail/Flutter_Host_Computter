@@ -61,19 +61,18 @@ class DeviceController extends ChangeNotifier {
 
   void requestStaticRefresh(int varId) => _core.requestStaticRefresh(varId);
 
+  void setVariableValue(int varId, dynamic value) =>
+      _core.setVariableValue(varId, value);
+
   void toggleDemoMode() => _core.toggleDemoMode();
 
   Future<String> saveStaticVarsToJson(String path) =>
       _core.saveStaticVarsToJson(path);
 
-  Future<int> loadStaticVarsFromJson(String path) =>
-      _core.loadStaticVarsFromJson(path);
+  Future<int> loadStaticVarsFromJson(String path, {bool mergeMode = false}) =>
+      _core.loadStaticVarsFromJson(path, mergeMode: mergeMode);
 
   Future<void> writeAllStaticVarsToDevice() => _core.writeAllStaticVarsToDevice();
-
-  void setAutoSavePath(String path) => _core.setAutoSavePath(path);
-
-  Future<void> triggerAutoSave() => _core.triggerAutoSave();
 
   @override
   void dispose() {

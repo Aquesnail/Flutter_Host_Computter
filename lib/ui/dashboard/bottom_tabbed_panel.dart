@@ -4,6 +4,7 @@ import '../../core/services/device_controller.dart';
 import '../../debug_console.dart';
 import '../../lowfreq_window.dart';
 import '../attitude/attitude_window.dart';
+import '../vehicle/vehicle_control_window.dart';
 
 class BottomTabbedPanel extends StatelessWidget {
   const BottomTabbedPanel({super.key});
@@ -56,6 +57,8 @@ class BottomTabbedPanel extends StatelessWidget {
                         context.read<DeviceController>().toggleDemoMode();
                       } else if (value == 'attitude') {
                         showAttitudeWindow(context);
+                      } else if (value == 'vehicle') {
+                        showVehicleControlWindow(context);
                       }
                     },
                     itemBuilder: (context) {
@@ -67,6 +70,16 @@ class BottomTabbedPanel extends StatelessWidget {
                               Icon(Icons.threed_rotation, size: 18),
                               SizedBox(width: 8),
                               Text('3D 姿态指示器'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'vehicle',
+                          child: Row(
+                            children: [
+                              Icon(Icons.sports_esports, size: 18),
+                              SizedBox(width: 8),
+                              Text('车辆操控'),
                             ],
                           ),
                         ),

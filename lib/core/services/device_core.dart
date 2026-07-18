@@ -290,9 +290,9 @@ class DeviceCore {
         final bd = ByteData.sublistView(dataPart, offset, offset + varLen);
         dynamic val = 0;
 
-        if (varLen == 1)
+        if (varLen == 1) {
           val = bd.getUint8(0);
-        else if (varLen == 2)
+        } else if (varLen == 2)
           val = bd.getUint16(0, Endian.big);
         else if (varLen == 4) {
           val = (type == 6) ? bd.getFloat32(0, Endian.big) : bd.getUint32(0, Endian.big);
@@ -376,9 +376,9 @@ class DeviceCore {
       final bd = ByteData.sublistView(dataPart);
       int type = registry[vid]!.type;
 
-      if (vlen == 1)
+      if (vlen == 1) {
         val = bd.getUint8(0);
-      else if (vlen == 2)
+      } else if (vlen == 2)
         val = bd.getUint16(0, Endian.big);
       else if (vlen == 4) {
         val = (type == 6) ? bd.getFloat32(0, Endian.big) : bd.getUint32(0, Endian.big);
@@ -508,6 +508,20 @@ class DeviceCore {
     _notify();
   }
 
+  void setVariableValue(int varId, dynamic value) {
+    final v = registry[varId];
+    if (v == null) return;
+    v.value = value;
+    if (_demoModeActive) {
+      if (v.isHighFreq) {
+        _highFreqDataCtrl.add(MapEntry(varId, value.toDouble()));
+      }
+      _notify();
+    } else if (isConnected) {
+      sendData(DebugProtocol.packWriteCmd(varId, _getVarLength(v.type), value, v.type));
+    }
+  }
+
   void requestStaticRefresh(int varId) {
     sendData(DebugProtocol.packStaticRefreshCmd(varId));
   }
@@ -540,31 +554,83 @@ class DeviceCore {
     return jsonStr;
   }
 
-  Future<int> loadStaticVarsFromJson(String path) async {
+  Future<int> loadStaticVarsFromJson(String path, {bool mergeMode = false}) async {
     final jsonStr = await File(path).readAsString();
     final json = jsonDecode(jsonStr) as Map<String, dynamic>;
 
     final varsList = json["vars"] as List<dynamic>;
     int loadedCount = 0;
 
-    for (final item in varsList) {
-      final id = item["id"] as int;
-      final name = item["name"] as String;
-      final type = item["type"] as int;
-      final addr = item["addr"] as int;
-      final value = item["value"];
-      final isPeri = (item["isPeri"] as bool?) ?? false;
+    if (!mergeMode) {
+      // ── 覆盖模式（原逻辑）：整个参数表按 id 覆盖 ──
+      for (final item in varsList) {
+        final id = item["id"] as int;
+        final name = item["name"] as String;
+        final type = item["type"] as int;
+        final addr = item["addr"] as int;
+        final value = item["value"];
+        final isPeri = (item["isPeri"] as bool?) ?? false;
 
-      if (registry.containsKey(id)) {
-        registry[id] = RegisteredVar(id, name, type, addr,
-            isStatic: true, isPeri: isPeri)
-          ..value = value;
-        loadedCount++;
-      } else {
-        registry[id] = RegisteredVar(id, name, type, addr,
-            isStatic: true, isPeri: isPeri)
-          ..value = value;
-        loadedCount++;
+        if (registry.containsKey(id)) {
+          registry[id] = RegisteredVar(id, name, type, addr,
+              isStatic: true, isPeri: isPeri)
+            ..value = value;
+          loadedCount++;
+        } else {
+          registry[id] = RegisteredVar(id, name, type, addr,
+              isStatic: true, isPeri: isPeri)
+            ..value = value;
+          loadedCount++;
+        }
+      }
+    } else {
+      // ── 合并模式：按 name 匹配，只写入 value，不动 id/addr ──
+      // 1. 将 registry 中的静态变量按 name（忽略大小写）分组，组内按 id 升序
+      final regByName = <String, List<RegisteredVar>>{};
+      for (final v in registry.values) {
+        if (!v.isStatic) continue;
+        final key = v.name.toLowerCase().trim();
+        regByName.putIfAbsent(key, () => []).add(v);
+      }
+      for (final list in regByName.values) {
+        list.sort((a, b) => a.id.compareTo(b.id));
+      }
+
+      // 2. 将 JSON 条目按 name（忽略大小写）分组，组内按 id 升序
+      final jsonByName = <String, List<dynamic>>{};
+      for (final item in varsList) {
+        final name = (item["name"] as String).toLowerCase().trim();
+        jsonByName.putIfAbsent(name, () => []).add(item);
+      }
+      for (final list in jsonByName.values) {
+        list.sort((a, b) => (a["id"] as int).compareTo(b["id"] as int));
+      }
+
+      // 3. 遍历 JSON 分组，按 name 匹配 registry 分组
+      for (final entry in jsonByName.entries) {
+        final jsonName = entry.key;
+        final jsonItems = entry.value;
+        final regVars = regByName[jsonName];
+
+        // name 在 registry 中不存在 → 跳过（不新增）
+        if (regVars == null) continue;
+
+        // 数组数量不一致 → 跳过整组
+        if (jsonItems.length != regVars.length) continue;
+
+        // 数量一致 → 按 id 升序逐元素配对写入
+        for (int i = 0; i < jsonItems.length; i++) {
+          final jsonItem = jsonItems[i];
+          final regVar = regVars[i];
+          final jsonType = jsonItem["type"] as int;
+
+          if (regVar.type == jsonType) {
+            // 类型匹配 → 只写入 value
+            regVar.value = jsonItem["value"];
+            loadedCount++;
+          }
+          // 类型不匹配 → 跳过该元素，不动上位机参数表
+        }
       }
     }
 
@@ -582,34 +648,17 @@ class DeviceCore {
     }
   }
 
-  String? _autoSavePath;
-  Timer? _autoSaveDebounce;
-
-  void setAutoSavePath(String path) {
-    _autoSavePath = path;
-  }
-
-  Future<void> triggerAutoSave() async {
-    if (_autoSavePath == null) return;
-
-    _autoSaveDebounce?.cancel();
-    _autoSaveDebounce = Timer(const Duration(milliseconds: 500), () async {
-      try {
-        await saveStaticVarsToJson(_autoSavePath!);
-        print("自动保存静态变量: $_autoSavePath");
-      } catch (e) {
-        print("自动保存失败: $e");
-      }
-    });
-  }
-
   void reorderNonStaticVars(int oldIndex, int newIndex) {
     List<int> staticKeys = [];
+    List<int> highFreqKeys = [];
     List<int> nonStaticKeys = [];
 
     for (var key in registry.keys) {
-      if (registry[key]!.isStatic) {
+      final v = registry[key]!;
+      if (v.isStatic) {
         staticKeys.add(key);
+      } else if (v.isHighFreq) {
+        highFreqKeys.add(key);
       } else {
         nonStaticKeys.add(key);
       }
@@ -623,6 +672,9 @@ class DeviceCore {
 
     final Map<int, RegisteredVar> sortedMap = {};
     for (var key in nonStaticKeys) {
+      sortedMap[key] = registry[key]!;
+    }
+    for (var key in highFreqKeys) {
       sortedMap[key] = registry[key]!;
     }
     for (var key in staticKeys) {

@@ -221,13 +221,14 @@ class HttpApi {
   Future<void> _handleLoadStatic(HttpRequest request) async {
     final body = await _readBody(request);
     final path = body['path'] as String?;
+    final mergeMode = (body['mergeMode'] as bool?) ?? false;
     if (path == null) {
       _respondJson(request.response, 400, {'status': 'error', 'message': 'Missing path'});
       return;
     }
     try {
-      final count = await _core.loadStaticVarsFromJson(path);
-      _respondJson(request.response, 200, {'status': 'ok', 'count': count, 'path': path});
+      final count = await _core.loadStaticVarsFromJson(path, mergeMode: mergeMode);
+      _respondJson(request.response, 200, {'status': 'ok', 'count': count, 'path': path, 'mergeMode': mergeMode});
     } catch (e) {
       _respondJson(request.response, 500, {'status': 'error', 'message': '$e'});
     }

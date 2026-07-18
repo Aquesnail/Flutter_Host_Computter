@@ -65,7 +65,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
               ),
               const SizedBox(height: 10,),
               DropdownButtonFormField<int>(
-                value: selectedVarType,
+                initialValue: selectedVarType,
                 isExpanded: true,
                 items: List.generate(7, (index) {
                   return DropdownMenuItem(
@@ -229,7 +229,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                         Row(
                           children: [
                             Selector<DeviceController,int>(
-                              selector:(_,c) => c.registry.values.where((v) => !v.isStatic).length,
+                              selector:(_,c) => c.registry.values.where((v) => !v.isStatic && !v.isHighFreq).length,
                               builder:(_,count,__)=>Text("共 $count 个变量", style: const TextStyle(fontSize:12)),
                             ),
                             const SizedBox(width: 8),
@@ -271,7 +271,7 @@ class _LowFreqWindow extends State<LowFreqWindow>{
                   // 核心优化 1：只监听 ID 列表的【顺序】和【内容】
                   // 如果数值改变但顺序没变，ReorderableListView 不会重建！
                   child: Selector<DeviceController, List<int>>(
-                    selector: (_, c) => c.registry.values.where((v) => !v.isStatic).map((v) => v.id).toList(),
+                    selector: (_, c) => c.registry.values.where((v) => !v.isStatic && !v.isHighFreq).map((v) => v.id).toList(),
                     shouldRebuild: (prev, next) => !listEquals(prev, next), // 使用 listEquals 深度比较
                     builder: (context, keys, child) {
                       if (keys.isEmpty) {

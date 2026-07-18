@@ -2,10 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
-import 'package:file_picker/file_picker.dart';
 import '../../core/services/device_controller.dart';
-import '../../core/models/registered_var.dart';
 import '../../debug_protocol.dart';
+import 'static_vars_actions.dart';
+import 'static_vars_window.dart';
+
+// ── StaticVarsPanel ──
 
 class StaticVarsPanel extends StatelessWidget {
   const StaticVarsPanel({super.key});
@@ -18,57 +20,51 @@ class StaticVarsPanel extends StatelessWidget {
       color: colorScheme.surface,
       child: Column(
         children: [
-          // 标题栏：包含标题和一键刷新按钮
+          // Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.purple.withValues(alpha: 0.15),
               border: Border(
-                bottom: BorderSide(
-                  color: Colors.purple.withValues(alpha: 0.3),
-                  width: 1,
-                ),
+                bottom: BorderSide(color: Colors.purple.withValues(alpha: 0.3), width: 1),
               ),
             ),
             child: Column(
               children: [
-                // 第一行：标题 + 全部刷新按钮
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        Icon(
-                          Icons.storage,
-                          size: 18,
-                          color: Colors.purple.withValues(alpha: 0.8),
-                        ),
+                        Icon(Icons.storage, size: 18, color: Colors.purple.withValues(alpha: 0.8)),
                         const SizedBox(width: 8),
-                        const Text(
-                          "静态变量",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: Colors.purple,
-                          ),
-                        ),
+                        const Text("静态变量",
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.purple)),
                         const SizedBox(width: 8),
                         Selector<DeviceController, int>(
-                          selector: (_, c) =>
-                              c.registry.values.where((v) => v.isStatic).length,
-                          builder: (_, count, __) => Container(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          selector: (_, c) => c.registry.values.where((v) => v.isStatic).length,
+                          builder: (_, count, _) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: Colors.purple.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Text(
-                              "$count",
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Colors.purple,
-                                fontWeight: FontWeight.bold,
+                            child: Text("$count",
+                                style: const TextStyle(fontSize: 11, color: Colors.purple, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: "弹出独立窗口",
+                          child: Material(
+                            color: Colors.purple.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(6),
+                            child: InkWell(
+                              onTap: () => showStaticVarsWindow(context),
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(Icons.open_in_new, size: 16, color: Colors.purple.withValues(alpha: 0.9)),
                               ),
                             ),
                           ),
@@ -79,28 +75,18 @@ class StaticVarsPanel extends StatelessWidget {
                       color: Colors.purple.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(6),
                       child: InkWell(
-                        onTap: () => _refreshAllStaticVars(context),
+                        onTap: () => refreshAllStaticVars(context),
                         borderRadius: BorderRadius.circular(6),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.refresh,
-                                size: 16,
-                                color: Colors.purple.withValues(alpha: 0.9),
-                              ),
+                              Icon(Icons.refresh, size: 16, color: Colors.purple.withValues(alpha: 0.9)),
                               const SizedBox(width: 4),
-                              Text(
-                                "全部刷新",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.purple.withValues(alpha: 0.9),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                              Text("全部刷新",
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.purple.withValues(alpha: 0.9), fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
@@ -109,129 +95,25 @@ class StaticVarsPanel extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                // 第二行：写入/导入/导出按钮
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Tooltip(
-                      message: "批量写入所有静态变量到下位机",
-                      child: Material(
-                        color: Colors.purple.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                        child: InkWell(
-                          onTap: () => _writeAllStaticVars(context),
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 6),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.upload,
-                                  size: 16,
-                                  color: Colors.purple.withValues(alpha: 0.9),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  "写入",
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color:
-                                        Colors.purple.withValues(alpha: 0.9),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    _HeaderButton("写入", Icons.upload, () => writeAllStaticVars(context)),
                     const SizedBox(width: 6),
-                    Tooltip(
-                      message: "从 JSON 文件导入静态变量",
-                      child: Material(
-                        color: Colors.purple.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                        child: InkWell(
-                          onTap: () => _importFromJson(context),
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 6),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.download,
-                                  size: 16,
-                                  color: Colors.purple.withValues(alpha: 0.9),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  "导入",
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color:
-                                        Colors.purple.withValues(alpha: 0.9),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    _HeaderButton("导入", Icons.download, () => importStaticVarsFromJson(context)),
                     const SizedBox(width: 6),
-                    Tooltip(
-                      message: "导出静态变量到 JSON 文件",
-                      child: Material(
-                        color: Colors.purple.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                        child: InkWell(
-                          onTap: () => _exportToJson(context),
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 6),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.save,
-                                  size: 16,
-                                  color: Colors.purple.withValues(alpha: 0.9),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  "导出",
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color:
-                                        Colors.purple.withValues(alpha: 0.9),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    _HeaderButton("导出", Icons.save, () => exportStaticVarsToJson(context)),
                   ],
                 ),
               ],
             ),
           ),
-          // 静态变量列表
+
+          // List
           Expanded(
             child: Selector<DeviceController, List<int>>(
-              selector: (_, c) => c.registry.values
-                  .where((v) => v.isStatic)
-                  .map((v) => v.id)
-                  .toList(),
+              selector: (_, c) =>
+                  c.registry.values.where((v) => v.isStatic).map((v) => v.id).toList(),
               shouldRebuild: (prev, next) => !listEquals(prev, next),
               builder: (context, staticVarIds, _) {
                 if (staticVarIds.isEmpty) {
@@ -239,31 +121,31 @@ class StaticVarsPanel extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.storage_outlined,
-                          size: 32,
-                          color: Colors.grey.withValues(alpha: 0.5),
-                        ),
+                        Icon(Icons.storage_outlined, size: 32, color: Colors.grey.withValues(alpha: 0.5)),
                         const SizedBox(height: 8),
-                        Text(
-                          "暂无静态变量",
-                          style: TextStyle(
-                            color: Colors.grey.withValues(alpha: 0.7),
-                            fontSize: 12,
-                          ),
-                        ),
+                        Text("暂无静态变量",
+                            style: TextStyle(color: Colors.grey.withValues(alpha: 0.7), fontSize: 12)),
                       ],
                     ),
                   );
                 }
 
+                final registry = context.read<DeviceController>().registry;
+                final groups = buildStaticVarGroups(registry);
+
                 return ListView.builder(
-                  itemCount: staticVarIds.length,
+                  itemCount: groups.length,
                   itemBuilder: (context, index) {
-                    final varId = staticVarIds[index];
+                    final group = groups[index];
+                    if (group.isArray) {
+                      return _StaticArrayTile(
+                        key: ValueKey('arr_${group.name}'),
+                        group: group,
+                      );
+                    }
                     return StaticVarTile(
-                      key: ValueKey(varId),
-                      varId: varId,
+                      key: ValueKey(group.vars.first.id),
+                      varId: group.vars.first.id,
                     );
                   },
                 );
@@ -274,157 +156,119 @@ class StaticVarsPanel extends StatelessWidget {
       ),
     );
   }
+}
 
-  void _refreshAllStaticVars(BuildContext context) async {
-    final controller = context.read<DeviceController>();
-    final staticVars =
-        controller.registry.values.where((v) => v.isStatic).toList();
+class _HeaderButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
 
-    if (staticVars.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("没有静态变量需要刷新"),
-          duration: Duration(seconds: 1),
+  const _HeaderButton(this.label, this.icon, this.onTap);
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: "$label静态变量",
+      child: Material(
+        color: Colors.purple.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: Colors.purple.withValues(alpha: 0.9)),
+                const SizedBox(width: 4),
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.purple.withValues(alpha: 0.9), fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
         ),
-      );
-      return;
-    }
+      ),
+    );
+  }
+}
 
-    // 发送刷新请求，每个请求间隔 20ms，避免下位机处理不过来
-    for (final variable in staticVars) {
-      controller.requestStaticRefresh(variable.id);
+// ── StaticArrayTile ──
+
+class _StaticArrayTile extends StatelessWidget {
+  final StaticVarGroup group;
+
+  const _StaticArrayTile({super.key, required this.group});
+
+  void _refreshAll(BuildContext context) async {
+    final ctrl = context.read<DeviceController>();
+    for (final v in group.vars) {
+      ctrl.requestStaticRefresh(v.id);
       await Future.delayed(const Duration(milliseconds: 20));
     }
   }
 
-  Future<void> _writeAllStaticVars(BuildContext context) async {
-    final controller = context.read<DeviceController>();
-    final staticVars =
-        controller.registry.values.where((v) => v.isStatic).toList();
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final name = group.name;
+    final count = group.vars.length;
+    final registry = context.read<DeviceController>().registry;
 
-    if (staticVars.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("没有静态变量可写入"),
-          duration: Duration(seconds: 1),
+    final valueSummary = group.vars
+        .map((v) => (registry[v.id]?.value ?? v.value).toString())
+        .join(', ');
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.5), width: 0.5)),
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+        leading: Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: Colors.purple.withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.purple.withValues(alpha: 0.5)),
+          ),
+          child: Center(
+            child: Text("$count", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.purple.withValues(alpha: 0.9))),
+          ),
         ),
-      );
-      return;
-    }
-
-    if (!controller.isConnected) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("请先连接串口"),
-          duration: Duration(seconds: 1),
+        title: Text("$name [0..${count - 1}]",
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis),
+        subtitle: Text(valueSummary,
+            style: TextStyle(fontSize: 10, color: colorScheme.onSurface.withValues(alpha: 0.5)),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(Icons.refresh, size: 18, color: Colors.purple.withValues(alpha: 0.7)),
+              tooltip: "全部刷新",
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
+              onPressed: () => _refreshAll(context),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+          ],
         ),
-      );
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("正在写入 ${staticVars.length} 个静态变量..."),
-        duration: const Duration(seconds: 1),
+        onTap: () => showArrayEditorDialog(context, group),
       ),
     );
-
-    await controller.writeAllStaticVarsToDevice();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("已发送 ${staticVars.length} 个静态变量到下位机"),
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
-  Future<void> _importFromJson(BuildContext context) async {
-    final controller = context.read<DeviceController>();
-
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-      dialogTitle: "选择静态变量配置文件",
-    );
-
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
-    if (path == null) return;
-
-    try {
-      final count = await controller.loadStaticVarsFromJson(path);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("已导入 $count 个静态变量"),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("导入失败: $e"),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  Future<void> _exportToJson(BuildContext context) async {
-    final controller = context.read<DeviceController>();
-    final staticVars =
-        controller.registry.values.where((v) => v.isStatic).toList();
-
-    if (staticVars.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("没有静态变量可导出"),
-          duration: Duration(seconds: 1),
-        ),
-      );
-      return;
-    }
-
-    final result = await FilePicker.platform.saveFile(
-      dialogTitle: "保存静态变量配置文件",
-      fileName: "static_vars.json",
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-    );
-
-    if (result == null) return;
-
-    try {
-      await controller.saveStaticVarsToJson(result);
-      // 设置自动保存路径并触发首次保存
-      controller.setAutoSavePath(result);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("已导出到 $result"),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("导出失败: $e"),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
   }
 }
+
+// ── StaticVarTile ──
 
 class StaticVarTile extends StatefulWidget {
   final int varId;
 
-  const StaticVarTile({
-    super.key,
-    required this.varId,
-  });
+  const StaticVarTile({super.key, required this.varId});
 
   @override
   State<StaticVarTile> createState() => _StaticVarTileState();
@@ -442,7 +286,6 @@ class _StaticVarTileState extends State<StaticVarTile> {
   void initState() {
     super.initState();
     _updateData();
-    // 静态变量也定期更新显示（值可能从其他方式更新）
     _refreshTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       if (mounted) _updateData();
     });
@@ -451,22 +294,13 @@ class _StaticVarTileState extends State<StaticVarTile> {
   void _updateData() {
     final controller = context.read<DeviceController>();
     final v = controller.registry[widget.varId];
-
     if (v == null) return;
 
-    final newValStr = v.value is double
-        ? (v.value as double).toStringAsFixed(3)
-        : v.value.toString();
-
-    if (newValStr != _valueDisplay ||
-        v.name != _nameDisplay ||
-        v.isPeri != _isPeri) {
-      final newTypeStr = v.type < VariableType.values.length
-          ? VariableType.values[v.type].displayName
-          : "Unknown";
-      final newAddrStr =
-          v.addr.toRadixString(16).toUpperCase().padLeft(8, '0');
-
+    final newValStr = v.value is double ? (v.value as double).toStringAsFixed(3) : v.value.toString();
+    if (newValStr != _valueDisplay || v.name != _nameDisplay || v.isPeri != _isPeri) {
+      final newTypeStr =
+          v.type < VariableType.values.length ? VariableType.values[v.type].displayName : "Unknown";
+      final newAddrStr = v.addr.toRadixString(16).toUpperCase().padLeft(8, '0');
       setState(() {
         _valueDisplay = newValStr;
         _nameDisplay = v.name;
@@ -478,8 +312,7 @@ class _StaticVarTileState extends State<StaticVarTile> {
   }
 
   void _requestRefresh() {
-    final controller = context.read<DeviceController>();
-    controller.requestStaticRefresh(widget.varId);
+    context.read<DeviceController>().requestStaticRefresh(widget.varId);
   }
 
   void _showModifyDialog() {
@@ -497,57 +330,28 @@ class _StaticVarTileState extends State<StaticVarTile> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-                "ID: ${v.id} | Type: ${VariableType.values[v.type].displayName}"),
+            Text("ID: ${v.id} | Type: ${VariableType.values[v.type].displayName}"),
             Text("Addr: 0x${v.addr.toRadixString(16).toUpperCase()}"),
             const SizedBox(height: 12),
             TextField(
               controller: valCtrl,
-              decoration: const InputDecoration(
-                labelText: "新值",
-                border: OutlineInputBorder(),
-              ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: "新值", border: OutlineInputBorder()),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("取消"),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
           ElevatedButton(
             onPressed: () {
               try {
-                num newVal;
-                if (v.type == VariableType.float.index) {
-                  newVal = double.parse(valCtrl.text);
-                } else {
-                  String input = valCtrl.text.trim();
-                  if (input.startsWith("0x") || input.startsWith("0X")) {
-                    newVal = int.parse(input.substring(2), radix: 16);
-                  } else {
-                    newVal = int.parse(input);
-                  }
-                }
-
-                int len = _getTypeLength(v.type);
-                controller.sendData(
-                    DebugProtocol.packWriteCmd(v.id, len, newVal, v.type));
-
-                // 静态变量修改后自动请求刷新以获取更新后的值
+                final newVal = parseVarValue(valCtrl.text, v.type);
+                controller.sendData(DebugProtocol.packWriteCmd(v.id, varTypeLength(v.type), newVal, v.type));
                 controller.requestStaticRefresh(v.id);
-
-                // 触发自动保存
-                controller.triggerAutoSave();
-
                 Navigator.pop(ctx);
               } catch (e) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text("数值格式错误: $e"),
-                      backgroundColor: Colors.red),
+                  SnackBar(content: Text("数值格式错误: $e"), backgroundColor: Colors.red),
                 );
               }
             },
@@ -556,13 +360,6 @@ class _StaticVarTileState extends State<StaticVarTile> {
         ],
       ),
     );
-  }
-
-  int _getTypeLength(int type) {
-    if (type == 0 || type == 1) return 1;
-    if (type == 2 || type == 3) return 2;
-    if (type >= 4 && type <= 6) return 4;
-    return 0;
   }
 
   @override
@@ -578,10 +375,7 @@ class _StaticVarTileState extends State<StaticVarTile> {
     return Container(
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-            width: 0.5,
-          ),
+          bottom: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.5), width: 0.5),
         ),
       ),
       child: ListTile(
@@ -596,52 +390,28 @@ class _StaticVarTileState extends State<StaticVarTile> {
             border: Border.all(color: Colors.purple.withValues(alpha: 0.4)),
           ),
           child: Center(
-            child: Text(
-              "${widget.varId}",
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: Colors.purple.withValues(alpha: 0.9),
-              ),
-            ),
+            child: Text("${widget.varId}",
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.purple.withValues(alpha: 0.9))),
           ),
         ),
-        title: Text(
-          _nameDisplay,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(_nameDisplay,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis),
         subtitle: Row(
           children: [
-            Text(
-              "0x$_addrStr | $_typeStr",
-              style: TextStyle(
-                fontSize: 10,
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
+            Text("0x$_addrStr | $_typeStr",
+                style: TextStyle(fontSize: 10, color: colorScheme.onSurface.withValues(alpha: 0.6))),
             if (_isPeri)
               Padding(
                 padding: const EdgeInsets.only(left: 6),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                   decoration: BoxDecoration(
                     color: Colors.purple.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(3),
-                    border: Border.all(
-                        color: Colors.purple.withValues(alpha: 0.5)),
+                    border: Border.all(color: Colors.purple.withValues(alpha: 0.5)),
                   ),
-                  child: const Text(
-                    "PERI",
-                    style: TextStyle(
-                        fontSize: 9,
-                        color: Colors.purple,
-                        fontWeight: FontWeight.bold),
-                  ),
+                  child: const Text("PERI",
+                      style: TextStyle(fontSize: 9, color: Colors.purple, fontWeight: FontWeight.bold)),
                 ),
               ),
           ],
@@ -649,22 +419,15 @@ class _StaticVarTileState extends State<StaticVarTile> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              _valueDisplay,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.purple.withValues(alpha: 0.9),
-                fontFamily: 'monospace',
-              ),
-            ),
+            Text(_valueDisplay,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple.withValues(alpha: 0.9),
+                    fontFamily: 'monospace')),
             const SizedBox(width: 4),
             IconButton(
-              icon: Icon(
-                Icons.refresh,
-                size: 18,
-                color: Colors.purple.withValues(alpha: 0.7),
-              ),
+              icon: Icon(Icons.refresh, size: 18, color: Colors.purple.withValues(alpha: 0.7)),
               tooltip: "刷新",
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               padding: EdgeInsets.zero,

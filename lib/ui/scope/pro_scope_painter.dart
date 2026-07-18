@@ -45,6 +45,7 @@ class ProScopePainter extends CustomPainter {
 
   // ─── 复用的 Paint 对象（懒初始化，避免每帧 new）──────────
   Paint? _gridPaint;
+  Paint? _minorGridPaint;
   Paint? _bgPaint;
   Paint? _axisLinePaint;
   Paint? _cursorLinePaint;
@@ -52,6 +53,7 @@ class ProScopePainter extends CustomPainter {
   Paint? _selBorderPaint;
 
   Paint get gridPaint => _gridPaint ??= (Paint()..color = Colors.white10..strokeWidth = 1);
+  Paint get minorGridPaint => _minorGridPaint ??= (Paint()..color = Colors.white.withValues(alpha: 0.04)..strokeWidth = 0.5);
   Paint get bgPaint => _bgPaint ??= (Paint()..color = const Color(0xFF2D2D2D));
   Paint get axisLinePaint => _axisLinePaint ??= (Paint()..color = Colors.white30);
   Paint get cursorLinePaint => _cursorLinePaint ??= (Paint()..color = Colors.white70..strokeWidth = 1);
@@ -80,35 +82,64 @@ class ProScopePainter extends CustomPainter {
     return _channelPaths[i]..reset();
   }
 
-  // ─── 网格缓存 ──────────────────────────────────────────
-  Size? _cachedGridSize;
-  Rect? _cachedGridRect;
-  Path? _cachedGridPath;
+  // ─── 自适应网格 ──────────────────────────────────────────
 
-  Path _gridPath(Size size, Rect rect) {
-    if (_cachedGridPath != null &&
-        _cachedGridSize == size &&
-        _cachedGridRect == rect) {
-      return _cachedGridPath!;
+  double _niceTimeStep(double rawMs) {
+    if (rawMs <= 0) return 1.0;
+    final exponent = (log(rawMs) / ln10).floor();
+    final power = pow(10.0, exponent).toDouble();
+    final mantissa = rawMs / power;
+
+    if (mantissa <= 1.5) return power;
+    if (mantissa <= 3.5) return 2 * power;
+    if (mantissa <= 7.5) return 5 * power;
+    return 10 * power;
+  }
+
+  String _formatTime(double ms) {
+    final absMs = ms.abs();
+    if (absMs >= 1000) {
+      return '${(ms / 1000).toStringAsFixed(1)}s';
+    } else if (absMs < 1) {
+      return '${ms.toStringAsFixed(1)}ms';
+    } else {
+      return '${ms.toStringAsFixed(0)}ms';
+    }
+  }
+
+  void _drawGrid(Canvas canvas, Rect chartRect) {
+    final msPerPixel = deltaTime / scaleX;
+    final stepMs = _niceTimeStep(msPerPixel * 100);
+    final stepPx = stepMs / msPerPixel;
+
+    final leftMs = (chartRect.left - offsetX) / scaleX * deltaTime;
+    final startMs = (leftMs / stepMs).ceil() * stepMs;
+
+    // 次网格线（1/5 步长，仅在间距足够时）
+    final minorStepMs = stepMs / 5.0;
+    final minorStepPx = minorStepMs / msPerPixel;
+    final showMinor = minorStepPx >= 15;
+
+    // X 轴网格线
+    double curMs = startMs;
+    for (double x = chartRect.left + (startMs - leftMs) / msPerPixel;
+        x < chartRect.right;
+        x += stepPx, curMs += stepMs) {
+      canvas.drawLine(Offset(x, chartRect.top), Offset(x, chartRect.bottom), gridPaint);
+      if (showMinor) {
+        for (int i = 1; i <= 4; i++) {
+          final mx = x + i * minorStepPx;
+          if (mx < chartRect.right) {
+            canvas.drawLine(Offset(mx, chartRect.top), Offset(mx, chartRect.bottom), minorGridPaint);
+          }
+        }
+      }
     }
 
-    final path = Path();
-    const stepX = 100.0;
-    const stepY = 50.0;
-
-    for (double x = rect.left; x < rect.right; x += stepX) {
-      path.moveTo(x, rect.top);
-      path.lineTo(x, rect.bottom);
+    // Y 轴网格线（固定 50px）
+    for (double y = chartRect.top; y < chartRect.bottom; y += 50) {
+      canvas.drawLine(Offset(chartRect.left, y), Offset(chartRect.right, y), gridPaint);
     }
-    for (double y = rect.top; y < rect.bottom; y += stepY) {
-      path.moveTo(rect.left, y);
-      path.lineTo(rect.right, y);
-    }
-
-    _cachedGridSize = size;
-    _cachedGridRect = rect;
-    _cachedGridPath = path;
-    return path;
   }
 
   @override
@@ -117,8 +148,8 @@ class ProScopePainter extends CustomPainter {
       yAxisWidth, 0, size.width - yAxisWidth, size.height - xAxisHeight,
     );
 
-    // 网格（缓存路径，仅 stroke 一次）
-    canvas.drawPath(_gridPath(size, chartRect), gridPaint);
+    // 网格
+    _drawGrid(canvas, chartRect);
 
     canvas.save();
     canvas.clipRect(chartRect);
@@ -196,7 +227,7 @@ class ProScopePainter extends CustomPainter {
     double cursorTime = cursorX! * deltaTime;
     final timeTp = TextPainter(
       text: TextSpan(
-        text: " T: ${cursorTime.toStringAsFixed(1)}ms ",
+        text: " T: ${_formatTime(cursorTime)} ",
         style: const TextStyle(color: Colors.black, fontSize: 10, backgroundColor: Colors.white),
       ),
       textDirection: TextDirection.ltr,
@@ -258,24 +289,48 @@ class ProScopePainter extends CustomPainter {
   void _drawXAxis(Canvas canvas, Size size) {
     final tp = TextPainter(textDirection: TextDirection.ltr);
 
-    double stepPixels = 100 * scaleX;
-    if (stepPixels < 80) stepPixels = 100;
+    final msPerPixel = deltaTime / scaleX;
+    final stepMs = _niceTimeStep(msPerPixel * 100);
+    final stepPx = stepMs / msPerPixel;
 
-    for (double x = yAxisWidth; x < size.width; x += stepPixels) {
-      double indexVal = (x - offsetX) / scaleX;
-      double timeMs = indexVal * deltaTime;
+    final leftMs = (yAxisWidth - offsetX) / scaleX * deltaTime;
+    final startMs = (leftMs / stepMs).ceil() * stepMs;
 
-      String label;
-      if (timeMs.abs() >= 1000) {
-        label = "${(timeMs / 1000).toStringAsFixed(1)}s";
-      } else {
-        label = "${timeMs.toStringAsFixed(0)}ms";
-      }
+    // 次刻度（1/5 步长，仅在间距足够时显示）
+    final minorStepMs = stepMs / 5.0;
+    final minorStepPx = minorStepMs / msPerPixel;
+    final showMinor = minorStepPx >= 15;
 
+    double curMs = startMs;
+    for (double x = yAxisWidth + (startMs - leftMs) / msPerPixel;
+        x < size.width;
+        x += stepPx, curMs += stepMs) {
+      // 标签
+      final label = _formatTime(curMs);
       tp.text = TextSpan(text: label, style: const TextStyle(color: Colors.white60, fontSize: 10));
       tp.layout();
-      tp.paint(canvas, Offset(x - 10, size.height - xAxisHeight + 5));
-      canvas.drawLine(Offset(x, size.height - xAxisHeight), Offset(x, size.height - xAxisHeight + 5), axisLinePaint);
+      tp.paint(canvas, Offset(x - tp.width / 2, size.height - xAxisHeight + 5));
+
+      // 主刻度
+      canvas.drawLine(
+        Offset(x, size.height - xAxisHeight),
+        Offset(x, size.height - xAxisHeight + 8),
+        axisLinePaint,
+      );
+
+      // 次刻度
+      if (showMinor) {
+        for (int i = 1; i <= 4; i++) {
+          final mx = x + i * minorStepPx;
+          if (mx < size.width) {
+            canvas.drawLine(
+              Offset(mx, size.height - xAxisHeight),
+              Offset(mx, size.height - xAxisHeight + 4),
+              axisLinePaint,
+            );
+          }
+        }
+      }
     }
   }
 
