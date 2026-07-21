@@ -172,6 +172,42 @@ Future<void> exportStaticVarsToJson(BuildContext context) async {
 
 // ── Shared utilities ──
 
+/// category → 中文标签
+const Map<int, String> categoryLabels = {
+  0x00: 'ADC 误差权重',
+  0x01: '外环控制',
+  0x02: '内环 PI',
+  0x03: '速度输出',
+  0x04: '模糊 PID',
+  0x05: '元素行为',
+  0x06: '系统杂项',
+  0x07: '观测变量',
+  0x08: '电机外设',
+  0xFF: '未分类',
+};
+
+/// element → 中文标签（空字符串表示全局，不显示）
+const Map<int, String> elementLabels = {
+  0x00: '',
+  0x01: '直线',
+  0x02: '十字',
+  0x03: '环岛',
+  0x04: '墙面',
+};
+
+/// 将静态变量按 (category) 分组，返回按 category ID 排序的 LinkedHashMap
+Map<int, List<RegisteredVar>> groupVarsByCategory(Iterable<RegisteredVar> vars) {
+  final map = <int, List<RegisteredVar>>{};
+  for (final v in vars) {
+    map.putIfAbsent(v.category, () => []).add(v);
+  }
+  // 按 category ID 排序
+  final sorted = Map<int, List<RegisteredVar>>.fromEntries(
+    map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+  );
+  return sorted;
+}
+
 int varTypeLength(int type) {
   if (type == 0 || type == 1) return 1;
   if (type == 2 || type == 3) return 2;

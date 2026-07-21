@@ -148,12 +148,14 @@ class HttpApi {
     final isHighFreq = (body['isHighFreq'] as bool?) ?? false;
     final isStatic = (body['isStatic'] as bool?) ?? false;
     final isPeri = (body['isPeri'] as bool?) ?? false;
+    final category = (body['category'] as int?) ?? 0xFF;
+    final element = (body['element'] as int?) ?? 0x00;
     if (addr == null || name == null || type == null) {
       _respondJson(request.response, 400, {'status': 'error', 'message': 'Missing addr/name/type'});
       return;
     }
-    _core.sendData(DebugProtocol.packRegisterCmd(addr, name, type, isHighFreq: isHighFreq, isStatic: isStatic, isPeri: isPeri));
-    _respondJson(request.response, 200, {'status': 'ok', 'addr': '0x${addr.toRadixString(16).toUpperCase()}', 'name': name, 'type': type, 'isHighFreq': isHighFreq, 'isStatic': isStatic, 'isPeri': isPeri});
+    _core.sendData(DebugProtocol.packRegisterCmd(addr, name, type, isHighFreq: isHighFreq, isStatic: isStatic, isPeri: isPeri, category: category, element: element));
+    _respondJson(request.response, 200, {'status': 'ok', 'addr': '0x${addr.toRadixString(16).toUpperCase()}', 'name': name, 'type': type, 'isHighFreq': isHighFreq, 'isStatic': isStatic, 'isPeri': isPeri, 'category': category, 'element': element});
   }
 
   Future<void> _handleWrite(HttpRequest request) async {

@@ -280,8 +280,13 @@ class DeviceCore {
         offset += 2;
 
         if (!registry.containsKey(id)) {
-          print("解析批量高频包错误: 遇到未注册的 ID $id");
-          break;
+          // 用帧头 rawType 的低 4 位推断变量长度，安全跳过该条目
+          int guessedType = rawType & DebugProtocol.maskType;
+          int skipLen = _getVarLength(guessedType);
+          if (skipLen == 0) skipLen = 4; // fallback
+          print("跳过未注册的批量高频 ID $id (推断类型$guessedType, 跳过$skipLen字节)");
+          offset += skipLen;
+          continue;
         }
 
         final variable = registry[id]!;
@@ -311,13 +316,19 @@ class DeviceCore {
 
     if (vid == 0xFE) {
       // 协议 v2: [ID:2][Type:1][Addr:4][Name:10] = 17 字节
-      if (dataPart.length == 17) {
+      // 协议 v3: [ID:2][Type:1][Addr:4][Category:1][Element:1][Name:16] = 25 字节
+      // 用长度自动判断：>= 25 走 v3，>= 17 走 v2（兼容旧固件）
+      if (dataPart.length >= 17) {
         int regId = (dataPart[0] << 8) | dataPart[1];
         int regRawType = dataPart[2];
 
         int regAddr = ByteData.sublistView(dataPart, 3, 7).getUint32(0, Endian.big);
+        bool isV3 = dataPart.length >= 25;
+        print("0xFE dataPart len: ${dataPart.length} id:$regId type:$regRawType addr:0x${regAddr.toRadixString(16)} isV3:$isV3");
+        int regCategory = isV3 ? dataPart[7] : 0xFF;  // 兼容旧固件
+        int regElement  = isV3 ? dataPart[8] : 0x00;  // 兼容旧固件
         String name = ascii
-            .decode(dataPart.sublist(7, 17), allowInvalid: true)
+            .decode(dataPart.sublist(isV3 ? 9 : 7, isV3 ? 25 : 17), allowInvalid: true)
             .split('\x00')
             .first;
 
@@ -335,7 +346,8 @@ class DeviceCore {
 
         bool isNew = !registry.containsKey(regId);
         RegisteredVar newVar = RegisteredVar(regId, name, realType, regAddr,
-            isHighFreq: isHigh, isStatic: isStatic, isPeri: isPeri);
+            isHighFreq: isHigh, isStatic: isStatic, isPeri: isPeri,
+            category: regCategory, element: regElement);
 
         if (isNew) {
           if (isHigh) {
@@ -441,19 +453,19 @@ class DeviceCore {
     _demoTime = 0;
     _demoTick = 0;
 
-    registry[1] = RegisteredVar(1, "sine", 6, 0x20001000, isHighFreq: true);
-    registry[2] = RegisteredVar(2, "cosine", 6, 0x20001004, isHighFreq: true);
-    registry[3] = RegisteredVar(3, "saw", 6, 0x20001008, isHighFreq: true);
+    registry[1] = RegisteredVar(1, "sine", 6, 0x20001000, isHighFreq: true, category: DebugProtocol.catOuterLoop);
+    registry[2] = RegisteredVar(2, "cosine", 6, 0x20001004, isHighFreq: true, category: DebugProtocol.catOuterLoop);
+    registry[3] = RegisteredVar(3, "saw", 6, 0x20001008, isHighFreq: true, category: DebugProtocol.catSpeedOut);
 
-    registry[10] = RegisteredVar(10, "pitch", 6, 0x20001100, isHighFreq: true);
-    registry[11] = RegisteredVar(11, "roll", 6, 0x20001104, isHighFreq: true);
-    registry[12] = RegisteredVar(12, "yaw", 6, 0x20001108, isHighFreq: true);
+    registry[10] = RegisteredVar(10, "pitch", 6, 0x20001100, isHighFreq: true, category: DebugProtocol.catObserve);
+    registry[11] = RegisteredVar(11, "roll", 6, 0x20001104, isHighFreq: true, category: DebugProtocol.catObserve);
+    registry[12] = RegisteredVar(12, "yaw", 6, 0x20001108, isHighFreq: true, category: DebugProtocol.catObserve);
 
-    registry[4] = RegisteredVar(4, "counter", 2, 0x20002000);
-    registry[5] = RegisteredVar(5, "temp", 3, 0x20002002);
+    registry[4] = RegisteredVar(4, "counter", 2, 0x20002000, category: DebugProtocol.catSystem);
+    registry[5] = RegisteredVar(5, "temp", 3, 0x20002002, category: DebugProtocol.catSystem);
 
-    registry[6] = RegisteredVar(6, "version", 4, 0x20003000, isStatic: true);
-    registry[7] = RegisteredVar(7, "threshold", 6, 0x20003004, isStatic: true);
+    registry[6] = RegisteredVar(6, "version", 4, 0x20003000, isStatic: true, category: DebugProtocol.catSystem);
+    registry[7] = RegisteredVar(7, "threshold", 6, 0x20003004, isStatic: true, category: DebugProtocol.catInnerPI);
     registry[6]!.value = 0x00010203;
     registry[7]!.value = 3.14159;
 
@@ -545,6 +557,8 @@ class DeviceCore {
       "addr": v.addr,
       "value": v.value,
       "isPeri": v.isPeri,
+      "category": v.category,
+      "element": v.element,
     }).toList();
 
     final json = {
@@ -574,15 +588,19 @@ class DeviceCore {
         final addr = item["addr"] as int;
         final value = item["value"];
         final isPeri = (item["isPeri"] as bool?) ?? false;
+        final category = (item["category"] as int?) ?? 0xFF;
+        final element = (item["element"] as int?) ?? 0x00;
 
         if (registry.containsKey(id)) {
           registry[id] = RegisteredVar(id, name, type, addr,
-              isStatic: true, isPeri: isPeri)
+              isStatic: true, isPeri: isPeri,
+              category: category, element: element)
             ..value = value;
           loadedCount++;
         } else {
           registry[id] = RegisteredVar(id, name, type, addr,
-              isStatic: true, isPeri: isPeri)
+              isStatic: true, isPeri: isPeri,
+              category: category, element: element)
             ..value = value;
           loadedCount++;
         }

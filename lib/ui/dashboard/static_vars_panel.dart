@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/services/device_controller.dart';
+import '../../core/models/registered_var.dart';
 import '../../debug_protocol.dart';
 import 'static_vars_actions.dart';
 import 'static_vars_window.dart';
@@ -131,21 +132,59 @@ class StaticVarsPanel extends StatelessWidget {
                 }
 
                 final registry = context.read<DeviceController>().registry;
-                final groups = buildStaticVarGroups(registry);
+                final staticVars = registry.values.where((v) => v.isStatic).toList();
+                final catGroups = groupVarsByCategory(staticVars);
 
-                return ListView.builder(
-                  itemCount: groups.length,
-                  itemBuilder: (context, index) {
-                    final group = groups[index];
-                    if (group.isArray) {
-                      return _StaticArrayTile(
-                        key: ValueKey('arr_${group.name}'),
-                        group: group,
+                if (catGroups.length == 1 && catGroups.keys.first == 0xFF) {
+                  // 全部未分类 → 保持旧版平铺展示
+                  final groups = buildStaticVarGroups(registry);
+                  return ListView.builder(
+                    itemCount: groups.length,
+                    itemBuilder: (context, index) {
+                      final group = groups[index];
+                      if (group.isArray) {
+                        return _StaticArrayTile(
+                          key: ValueKey('arr_${group.name}'),
+                          group: group,
+                        );
+                      }
+                      return StaticVarTile(
+                        key: ValueKey(group.vars.first.id),
+                        varId: group.vars.first.id,
                       );
-                    }
-                    return StaticVarTile(
-                      key: ValueKey(group.vars.first.id),
-                      varId: group.vars.first.id,
+                    },
+                  );
+                }
+
+                // 有分类 → 二级分组折叠展示
+                return ListView.builder(
+                  itemCount: catGroups.entries.length,
+                  itemBuilder: (context, index) {
+                    final entry = catGroups.entries.elementAt(index);
+                    final catName = categoryLabels[entry.key] ?? '其他';
+                    final catVars = entry.value;
+                    final groups = buildStaticVarGroups(
+                      Map<int, RegisteredVar>.fromEntries(
+                        catVars.map((v) => MapEntry(v.id, v)),
+                      ),
+                    );
+
+                    return ExpansionTile(
+                      title: Text('$catName (${catVars.length})',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      initiallyExpanded: entry.key != 0x07, // 观测变量默认折叠
+                      children: groups.map((group) {
+                        if (group.isArray) {
+                          return _StaticArrayTile(
+                            key: ValueKey('arr_${group.name}'),
+                            group: group,
+                          );
+                        }
+                        return StaticVarTile(
+                          key: ValueKey(group.vars.first.id),
+                          varId: group.vars.first.id,
+                        );
+                      }).toList(),
                     );
                   },
                 );

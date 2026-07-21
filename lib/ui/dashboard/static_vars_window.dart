@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/device_controller.dart';
+import '../../core/models/registered_var.dart';
 import '../../debug_protocol.dart';
 import 'static_vars_actions.dart';
 
@@ -276,7 +277,7 @@ class _StaticVarsWindowContentState extends State<_StaticVarsWindowContent> {
           ),
         ),
 
-        // Card grid
+        // Card grid (with category grouping)
         if (groups.isEmpty)
           Padding(
             padding: const EdgeInsets.all(40),
@@ -292,23 +293,72 @@ class _StaticVarsWindowContentState extends State<_StaticVarsWindowContent> {
           )
         else
           Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final group in groups)
-                    if (group.isArray)
-                      _StaticVarArrayCard(group: group)
-                    else
-                      _StaticVarCard(
-                        varId: group.vars.first.id,
-                        onTap: () => _showEditDialog(group.vars.first.id),
+            child: () {
+              final staticVars = registry.values.where((v) => v.isStatic).toList();
+              final catGroups = groupVarsByCategory(staticVars);
+
+              // 全部未分类 → 保持旧版平铺展示
+              if (catGroups.length == 1 && catGroups.keys.first == 0xFF) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final group in groups)
+                        if (group.isArray)
+                          _StaticVarArrayCard(group: group)
+                        else
+                          _StaticVarCard(
+                            varId: group.vars.first.id,
+                            onTap: () => _showEditDialog(group.vars.first.id),
+                          ),
+                    ],
+                  ),
+                );
+              }
+
+              // 有分类 → 二级分组折叠展示
+              return ListView.builder(
+                padding: const EdgeInsets.all(8),
+                itemCount: catGroups.entries.length,
+                itemBuilder: (ctx, index) {
+                  final entry = catGroups.entries.elementAt(index);
+                  final catName = categoryLabels[entry.key] ?? '其他';
+                  final catVars = entry.value;
+                  final catGroupsInner = buildStaticVarGroups(
+                    Map<int, RegisteredVar>.fromEntries(
+                      catVars.map((v) => MapEntry(v.id, v)),
+                    ),
+                  );
+
+                  return ExpansionTile(
+                    title: Text('$catName (${catVars.length})',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    initiallyExpanded: entry.key != 0x07, // 观测变量默认折叠
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final group in catGroupsInner)
+                              if (group.isArray)
+                                _StaticVarArrayCard(group: group)
+                              else
+                                _StaticVarCard(
+                                  varId: group.vars.first.id,
+                                  onTap: () => _showEditDialog(group.vars.first.id),
+                                ),
+                          ],
+                        ),
                       ),
-                ],
-              ),
-            ),
+                    ],
+                  );
+                },
+              );
+            }(),
           ),
       ],
     );

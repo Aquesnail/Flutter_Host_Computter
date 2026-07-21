@@ -13,6 +13,24 @@ class DebugProtocol {
   static const int maskPeri = 0x40; // 第6位 (0100 0000) - 外设变量标志
   static const int maskType = 0x0F; // 低4位 (0000 1111) 用于原始类型
 
+  // ── 语义分类常量 ──
+  static const int catAdcErr    = 0x00;
+  static const int catOuterLoop = 0x01;
+  static const int catInnerPI   = 0x02;
+  static const int catSpeedOut  = 0x03;
+  static const int catFuzzyPID  = 0x04;
+  static const int catElement   = 0x05;
+  static const int catSystem    = 0x06;
+  static const int catObserve   = 0x07;
+  static const int catMotorPeri = 0x08;
+
+  // ── 元素类型常量 ──
+  static const int elemGlobal   = 0x00;
+  static const int elemStraight = 0x01;
+  static const int elemCross    = 0x02;
+  static const int elemRing     = 0x03;
+  static const int elemWall     = 0x04;
+
   // --- CRC16-MODBUS ---
   static int calcCrc(List<int> data) {
     int crc = 0xFFFF;
@@ -78,9 +96,10 @@ class DebugProtocol {
   }
 
   // --- 2. 构建动态注册指令 (CMD 0x56) ---
-  // 【修改点】移除 memType，地址改为 4 字节，增加 isHighFreq 和 isStatic
+  // v3: payload 从 15 字节扩展为 23 字节，新增 category 和 element 字段，name 从 10 扩展到 16 字节
   static Uint8List packRegisterCmd(int address, String name, int varType,
-      {bool isHighFreq = false, bool isStatic = false, bool isPeri = false}) {
+      {bool isHighFreq = false, bool isStatic = false, bool isPeri = false,
+       int category = 0xFF, int element = 0x00}) {
     final inner = BytesBuilder();
 
     // 组合 Type、Freq 标志、Static 标志和 Peri 标志
@@ -102,11 +121,16 @@ class DebugProtocol {
     inner.addByte((address >> 8) & 0xFF);
     inner.addByte(address & 0xFF);
 
-    // 名字补齐
+    // 语义分类 (v3 新增)
+    inner.addByte(category);
+    // 元素类型 (v3 新增)
+    inner.addByte(element);
+
+    // 名字补齐 (v3: 10→16 字节)
     List<int> nameBytes = ascii.encode(name);
-    if (nameBytes.length > 10) nameBytes = nameBytes.sublist(0, 10);
+    if (nameBytes.length > 16) nameBytes = nameBytes.sublist(0, 16);
     inner.add(nameBytes);
-    for (int i = 0; i < 10 - nameBytes.length; i++) {
+    for (int i = 0; i < 16 - nameBytes.length; i++) {
       inner.addByte(0);
     }
 
