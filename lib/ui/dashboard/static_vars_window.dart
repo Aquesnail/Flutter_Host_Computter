@@ -277,7 +277,7 @@ class _StaticVarsWindowContentState extends State<_StaticVarsWindowContent> {
           ),
         ),
 
-        // Card grid (with category grouping)
+        // Card grid (with category tab pages)
         if (groups.isEmpty)
           Padding(
             padding: const EdgeInsets.all(40),
@@ -318,45 +318,63 @@ class _StaticVarsWindowContentState extends State<_StaticVarsWindowContent> {
                 );
               }
 
-              // 有分类 → 二级分组折叠展示
-              return ListView.builder(
-                padding: const EdgeInsets.all(8),
-                itemCount: catGroups.entries.length,
-                itemBuilder: (ctx, index) {
-                  final entry = catGroups.entries.elementAt(index);
-                  final catName = categoryLabels[entry.key] ?? '其他';
-                  final catVars = entry.value;
-                  final catGroupsInner = buildStaticVarGroups(
-                    Map<int, RegisteredVar>.fromEntries(
-                      catVars.map((v) => MapEntry(v.id, v)),
-                    ),
-                  );
-
-                  return ExpansionTile(
-                    title: Text('$catName (${catVars.length})',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    initiallyExpanded: entry.key != 0x07, // 观测变量默认折叠
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final group in catGroupsInner)
-                              if (group.isArray)
-                                _StaticVarArrayCard(group: group)
-                              else
-                                _StaticVarCard(
-                                  varId: group.vars.first.id,
-                                  onTap: () => _showEditDialog(group.vars.first.id),
-                                ),
-                          ],
+              // 有分类 → TabBar 分页展示
+              final entries = catGroups.entries.toList();
+              return DefaultTabController(
+                length: entries.length,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.2)),
                         ),
                       ),
-                    ],
-                  );
-                },
+                      child: TabBar(
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.start,
+                        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        unselectedLabelStyle: const TextStyle(fontSize: 12),
+                        indicatorColor: Colors.purple,
+                        labelColor: Colors.purple,
+                        unselectedLabelColor: cs.onSurfaceVariant,
+                        tabs: entries.map((e) {
+                          final catName = categoryLabels[e.key] ?? '其他';
+                          return Tab(text: '$catName\n${e.value.length}项');
+                        }).toList(),
+                      ),
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        children: entries.map((entry) {
+                          final catGroupsInner = buildStaticVarGroups(
+                            Map<int, RegisteredVar>.fromEntries(
+                              entry.value.map((v) => MapEntry(v.id, v)),
+                            ),
+                          );
+                          return SingleChildScrollView(
+                            padding: const EdgeInsets.all(8),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final group in catGroupsInner)
+                                  if (group.isArray)
+                                    _StaticVarArrayCard(group: group)
+                                  else
+                                    _StaticVarCard(
+                                      varId: group.vars.first.id,
+                                      onTap: () => _showEditDialog(group.vars.first.id),
+                                    ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
               );
             }(),
           ),
