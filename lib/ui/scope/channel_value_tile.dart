@@ -12,9 +12,11 @@ class ChannelValueTile extends StatefulWidget {
   final ValueDisplayFormat displayFormat;
   final IntDisplayFormat intDisplayFormat;
   final bool isFloat;
+  final double scale;
   final VoidCallback onToggleVisibility;
   final VoidCallback? onToggleFormat;
   final VoidCallback? onToggleIntFormat;
+  final ValueChanged<double>? onUpdateScale;
 
   const ChannelValueTile({
     super.key,
@@ -25,9 +27,11 @@ class ChannelValueTile extends StatefulWidget {
     this.displayFormat = ValueDisplayFormat.normal,
     this.intDisplayFormat = IntDisplayFormat.decimal,
     this.isFloat = false,
+    this.scale = 1.0,
     required this.onToggleVisibility,
     this.onToggleFormat,
     this.onToggleIntFormat,
+    this.onUpdateScale,
   });
 
   @override
@@ -40,10 +44,12 @@ class _ChannelValueTileState extends State<ChannelValueTile> {
 
   Timer? _lowFreqTimer;
   double _displayValue = 0.0;
+  late TextEditingController _scaleCtrl;
 
   @override
   void initState() {
     super.initState();
+    _scaleCtrl = TextEditingController(text: widget.scale.toString());
     _lowFreqTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (!mounted) return;
       final controller = context.read<DeviceController>();
@@ -57,9 +63,28 @@ class _ChannelValueTileState extends State<ChannelValueTile> {
   }
 
   @override
+  void didUpdateWidget(ChannelValueTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.scale != oldWidget.scale) {
+      _scaleCtrl.text = widget.scale.toString();
+    }
+  }
+
+  @override
   void dispose() {
     _lowFreqTimer?.cancel();
+    _scaleCtrl.dispose();
     super.dispose();
+  }
+
+  void _applyScale() {
+    final parsed = double.tryParse(_scaleCtrl.text);
+    if (parsed != null && parsed > 0) {
+      widget.onUpdateScale?.call(parsed);
+    } else {
+      // Revert to current scale on invalid input
+      _scaleCtrl.text = widget.scale.toString();
+    }
   }
 
   String _formattedValue() {
@@ -111,6 +136,34 @@ class _ChannelValueTileState extends State<ChannelValueTile> {
               ],
             ),
           ),
+          if (widget.onUpdateScale != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('×', style: TextStyle(fontSize: 9, color: Colors.white38)),
+                  SizedBox(
+                    width: 36,
+                    height: 18,
+                    child: TextField(
+                      controller: _scaleCtrl,
+                      style: const TextStyle(color: Colors.white70, fontSize: 10),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        filled: true,
+                        fillColor: Colors.black38,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 3, vertical: 0),
+                        border: OutlineInputBorder(borderSide: BorderSide.none),
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _applyScale(),
+                      onTapOutside: (_) => _applyScale(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (widget.isFloat)
             GestureDetector(
               onTap: widget.onToggleFormat,

@@ -71,9 +71,9 @@ class _SerialTrafficMonitorState extends State<SerialTrafficMonitor> {
 
     // 5. 决定颜色 (负载越高颜色越深/越红)
     Color newColor;
-    if (percent < 0.5)
+    if (percent < 0.5) {
       newColor = Colors.greenAccent;
-    else if (percent < 0.8)
+    } else if (percent < 0.8)
       newColor = Colors.orangeAccent;
     else
       newColor = Colors.redAccent;

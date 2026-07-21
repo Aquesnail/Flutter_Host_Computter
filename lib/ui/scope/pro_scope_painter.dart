@@ -24,6 +24,7 @@ class ProScopePainter extends CustomPainter {
 
   final Map<int, ValueDisplayFormat> displayFormats;
   final Map<int, IntDisplayFormat> intDisplayFormats;
+  final Map<int, double> channelScales;
 
   ProScopePainter({
     required this.allPoints,
@@ -41,6 +42,7 @@ class ProScopePainter extends CustomPainter {
     this.rectEnd,
     this.displayFormats = const {},
     this.intDisplayFormats = const {},
+    this.channelScales = const {},
   });
 
   // ─── 复用的 Paint 对象（懒初始化，避免每帧 new）──────────
@@ -167,14 +169,15 @@ class ProScopePainter extends CustomPainter {
       if (endIndex > points.length - 1) endIndex = points.length - 1;
       if (startIndex > endIndex) continue;
 
+      final chScale = channelScales[id] ?? 1.0;
       final path = _channelPath(i);
       double x = (startIndex * scaleX) + offsetX;
-      double y = (size.height / 2) - (points[startIndex] * scaleY * 20) + offsetY;
+      double y = (size.height / 2) - (points[startIndex] * chScale * scaleY * 20) + offsetY;
       path.moveTo(x, y);
 
       for (int j = startIndex + 1; j <= endIndex; j++) {
         x = (j * scaleX) + offsetX;
-        y = (size.height / 2) - (points[j] * scaleY * 20) + offsetY;
+        y = (size.height / 2) - (points[j] * chScale * scaleY * 20) + offsetY;
         path.lineTo(x, y);
       }
 
@@ -241,8 +244,10 @@ class ProScopePainter extends CustomPainter {
       final color = colors[i % colors.length];
 
       if (points != null && dataIndex >= 0 && dataIndex < points.length) {
-        double value = points[dataIndex];
-        double screenY = (size.height / 2) - (value * scaleY * 20) + offsetY;
+        final chScale = channelScales[id] ?? 1.0;
+        double rawValue = points[dataIndex];
+        double scaledValue = rawValue * chScale;
+        double screenY = (size.height / 2) - (scaledValue * scaleY * 20) + offsetY;
 
         if (screenY >= chartRect.top && screenY <= chartRect.bottom) {
           canvas.drawCircle(Offset(screenCursorX, screenY), 4, Paint()..color = color);
@@ -250,8 +255,8 @@ class ProScopePainter extends CustomPainter {
 
           final intFmt = intDisplayFormats[id];
           final displayText = intFmt != null
-              ? formatIntValue(value, intFmt)
-              : formatValue(value, displayFormats[id] ?? ValueDisplayFormat.normal);
+              ? formatIntValue(scaledValue, intFmt)
+              : formatValue(scaledValue, displayFormats[id] ?? ValueDisplayFormat.normal);
 
           final valTp = TextPainter(
             text: TextSpan(
@@ -345,7 +350,8 @@ class ProScopePainter extends CustomPainter {
         rectEnd != old.rectEnd ||
         deltaTime != old.deltaTime ||
         displayFormats != old.displayFormats ||
-        intDisplayFormats != old.intDisplayFormats) {
+        intDisplayFormats != old.intDisplayFormats ||
+        channelScales != old.channelScales) {
       return true;
     }
     for (final id in ids) {

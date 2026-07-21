@@ -17,6 +17,7 @@ class _ScopeChart extends StatefulWidget {
   final int bufferSize;
   final Map<int, ValueDisplayFormat> displayFormats;
   final Map<int, IntDisplayFormat> intDisplayFormats;
+  final Map<int, double> channelScales;
 
   const _ScopeChart({
     super.key,
@@ -26,6 +27,7 @@ class _ScopeChart extends StatefulWidget {
     required this.bufferSize,
     this.displayFormats = const {},
     this.intDisplayFormats = const {},
+    this.channelScales = const {},
   });
 
   @override
@@ -86,6 +88,7 @@ class _ScopeChartState extends State<_ScopeChart> {
       deltaTime: widget.deltaTime,
       displayFormats: widget.displayFormats,
       intDisplayFormats: widget.intDisplayFormats,
+      channelScales: widget.channelScales,
     );
   }
 }
@@ -108,6 +111,7 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
   final Set<int> _hiddenChannelIds = {};
   Map<int, ValueDisplayFormat> _channelDisplayFormats = {};
   Map<int, IntDisplayFormat> _channelIntDisplayFormats = {};
+  Map<int, double> _channelScales = {};
 
   late TextEditingController _bufferCtrl;
   late TextEditingController _dtCtrl;
@@ -190,6 +194,18 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
     });
   }
 
+  void _updateChannelScale(int varId, double scale) {
+    setState(() {
+      final newScales = Map<int, double>.of(_channelScales);
+      if (scale == 1.0) {
+        newScales.remove(varId);
+      } else {
+        newScales[varId] = scale;
+      }
+      _channelScales = newScales;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final highFreqVars = _selectHighFreqVars(context);
@@ -212,9 +228,11 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
                 hiddenChannelIds: _hiddenChannelIds,
                 channelDisplayFormats: _channelDisplayFormats,
                 channelIntDisplayFormats: _channelIntDisplayFormats,
+                channelScales: _channelScales,
                 onToggleChannel: _toggleChannel,
                 onToggleFormat: _toggleFormat,
                 onToggleIntFormat: _toggleIntFormat,
+                onUpdateScale: _updateChannelScale,
               ),
               Expanded(
                 child: _ScopeChart(
@@ -225,6 +243,7 @@ class _ScopeDashboardState extends State<ScopeDashboard> {
                   bufferSize: _bufferSize,
                   displayFormats: _channelDisplayFormats,
                   intDisplayFormats: _channelIntDisplayFormats,
+                  channelScales: _channelScales,
                 ),
               ),
             ],
@@ -323,9 +342,11 @@ class _Sidebar extends StatelessWidget {
   final Set<int> hiddenChannelIds;
   final Map<int, ValueDisplayFormat> channelDisplayFormats;
   final Map<int, IntDisplayFormat> channelIntDisplayFormats;
+  final Map<int, double> channelScales;
   final void Function(int) onToggleChannel;
   final void Function(int) onToggleFormat;
   final void Function(int) onToggleIntFormat;
+  final void Function(int, double) onUpdateScale;
 
   const _Sidebar({
     required this.highFreqVars,
@@ -333,9 +354,11 @@ class _Sidebar extends StatelessWidget {
     required this.hiddenChannelIds,
     required this.channelDisplayFormats,
     required this.channelIntDisplayFormats,
+    required this.channelScales,
     required this.onToggleChannel,
     required this.onToggleFormat,
     required this.onToggleIntFormat,
+    required this.onUpdateScale,
   });
 
   @override
@@ -369,9 +392,11 @@ class _Sidebar extends StatelessWidget {
                   displayFormat: channelDisplayFormats[v.id] ?? ValueDisplayFormat.normal,
                   intDisplayFormat: channelIntDisplayFormats[v.id] ?? IntDisplayFormat.decimal,
                   isFloat: isFloat,
+                  scale: channelScales[v.id] ?? 1.0,
                   onToggleVisibility: () => onToggleChannel(v.id),
                   onToggleFormat: isFloat ? () => onToggleFormat(v.id) : null,
                   onToggleIntFormat: !isFloat ? () => onToggleIntFormat(v.id) : null,
+                  onUpdateScale: (s) => onUpdateScale(v.id, s),
                 );
               },
             ),

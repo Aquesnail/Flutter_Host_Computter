@@ -14,6 +14,7 @@ class InteractiveScope extends StatefulWidget {
   final double deltaTime;
   final Map<int, ValueDisplayFormat> displayFormats;
   final Map<int, IntDisplayFormat> intDisplayFormats;
+  final Map<int, double> channelScales;
 
   const InteractiveScope({
     super.key,
@@ -23,6 +24,7 @@ class InteractiveScope extends StatefulWidget {
     this.deltaTime = 1.0,
     this.displayFormats = const {},
     this.intDisplayFormats = const {},
+    this.channelScales = const {},
   });
 
   @override
@@ -64,8 +66,9 @@ class _InteractiveScopeState extends State<InteractiveScope> {
     for (final id in widget.varIds) {
       final points = widget.dataPoints[id];
       if (points == null || points.length == 0) continue;
+      final chScale = widget.channelScales[id] ?? 1.0;
       for (int i = 0; i < points.length; i++) {
-        final v = points[i];
+        final v = points[i] * chScale;
         if (v < minVal) minVal = v;
         if (v > maxVal) maxVal = v;
         hasData = true;
@@ -297,6 +300,7 @@ class _InteractiveScopeState extends State<InteractiveScope> {
                         rectEnd: _rectEnd,
                         displayFormats: widget.displayFormats,
                         intDisplayFormats: widget.intDisplayFormats,
+                        channelScales: widget.channelScales,
                       ),
                       size: Size.infinite,
                     ),
