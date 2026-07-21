@@ -48,7 +48,9 @@ class DebugProtocol {
   static Uint8List packWriteCmd(int varId, int varLen, dynamic value, int varTypeInt) {
     // varTypeInt 传入时应该是纯类型 (0-6)，不需要包含频率位
     final inner = BytesBuilder();
-    inner.addByte(varId);
+    // ID 2 字节大端序（协议 v2）
+    inner.addByte((varId >> 8) & 0xFF);
+    inner.addByte(varId & 0xFF);
     inner.addByte(varLen);
     final bData = ByteData(4);
     
@@ -124,6 +126,7 @@ class DebugProtocol {
   // --- 3. 构建请求刷新静态变量指令 (CMD 0x58) ---
   // 上位机发送此指令请求下位机发送指定静态变量的当前值
   static Uint8List packStaticRefreshCmd(int varId) {
-    return _finalizeFrame(0x58, [varId]);
+    // ID 2 字节大端序（协议 v2）
+    return _finalizeFrame(0x58, [(varId >> 8) & 0xFF, varId & 0xFF]);
   }
 }

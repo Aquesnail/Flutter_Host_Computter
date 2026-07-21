@@ -214,22 +214,23 @@ class DeviceCore {
         parseIndex++;
         continue;
       }
-      if (bufferLen - parseIndex < 4) break;
+      // 协议 v2: 帧头最小长度 = 0xAA + ID(2) + Type(1) + Len(1) = 5 字节
+      if (bufferLen - parseIndex < 5) break;
 
-      int vid = _rxBuffer[parseIndex + 1];
-      int vrawType = _rxBuffer[parseIndex + 2];
-      int vlen = _rxBuffer[parseIndex + 3];
-      int packetLen = 6 + vlen;
+      int vid = (_rxBuffer[parseIndex + 1] << 8) | _rxBuffer[parseIndex + 2];
+      int vrawType = _rxBuffer[parseIndex + 3];
+      int vlen = _rxBuffer[parseIndex + 4];
+      int packetLen = 7 + vlen; // 0xAA + ID(2) + Type(1) + Len(1) + Payload(vlen) + CRC(2)
 
       if (bufferLen - parseIndex < packetLen) break;
 
       List<int> fullPacket = _rxBuffer.sublist(parseIndex, parseIndex + packetLen);
-      List<int> checkPayload = fullPacket.sublist(1, 4 + vlen);
-      int crcRecv = (fullPacket[4 + vlen] << 8) | fullPacket[5 + vlen];
+      List<int> checkPayload = fullPacket.sublist(1, 5 + vlen);
+      int crcRecv = (fullPacket[5 + vlen] << 8) | fullPacket[6 + vlen];
       int crcCalc = DebugProtocol.calcCrc(checkPayload);
 
       if (crcCalc == crcRecv) {
-        Uint8List dataPart = Uint8List.fromList(fullPacket.sublist(4, 4 + vlen));
+        Uint8List dataPart = Uint8List.fromList(fullPacket.sublist(5, 5 + vlen));
         _processPacket(vid, vrawType, vlen, dataPart);
         parseIndex += packetLen;
       } else {
@@ -273,8 +274,10 @@ class DeviceCore {
       int offset = 0;
 
       while (offset < vlen && offset < dataPart.length) {
-        int id = dataPart[offset];
-        offset += 1;
+        // 协议 v2: 每个条目 [ID:2][Value:N]
+        if (offset + 2 > dataPart.length) break;
+        int id = (dataPart[offset] << 8) | dataPart[offset + 1];
+        offset += 2;
 
         if (!registry.containsKey(id)) {
           print("解析批量高频包错误: 遇到未注册的 ID $id");
@@ -307,13 +310,14 @@ class DeviceCore {
     }
 
     if (vid == 0xFE) {
-      if (dataPart.length == 16) {
-        int regId = dataPart[0];
-        int regRawType = dataPart[1];
+      // 协议 v2: [ID:2][Type:1][Addr:4][Name:10] = 17 字节
+      if (dataPart.length == 17) {
+        int regId = (dataPart[0] << 8) | dataPart[1];
+        int regRawType = dataPart[2];
 
-        int regAddr = ByteData.sublistView(dataPart, 2, 6).getUint32(0, Endian.big);
+        int regAddr = ByteData.sublistView(dataPart, 3, 7).getUint32(0, Endian.big);
         String name = ascii
-            .decode(dataPart.sublist(6, 16), allowInvalid: true)
+            .decode(dataPart.sublist(7, 17), allowInvalid: true)
             .split('\x00')
             .first;
 
