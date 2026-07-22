@@ -68,7 +68,7 @@ enum VariableType { uint8, int8, uint16, int16, uint32, int32, float }
 | `maskType` | `static const int maskType = 0x0F` | 类型掩码（低4位） |
 | `calcCrc` | `static int calcCrc(List<int> data)` | CRC16-MODBUS 计算 |
 | `packHandshake` | `static Uint8List packHandshake()` | 构建握手帧 (CMD=0x00) |
-| `packWriteCmd` | `static Uint8List packWriteCmd(int varId, int varLen, dynamic value, int varTypeInt)` | 修改变量帧 (CMD=0x55) |
+| `packWriteCmd` | `static Uint8List packWriteCmd(int varId, int varLen, dynamic value, int varTypeInt)` | 修改变量帧 (CMD=0x5A) |
 | `packRegisterCmd` | `static Uint8List packRegisterCmd(int address, String name, int varType, {bool isHighFreq = false, bool isStatic = false, bool isPeri = false})` | 动态注册帧 (CMD=0x56) |
 | `packTextCmd` | `static Uint8List packTextCmd(String text)` | 文本发送帧 (CMD=0x57) |
 | `packStaticRefreshCmd` | `static Uint8List packStaticRefreshCmd(int varId)` | 请求刷新静态变量 (CMD=0x58) |

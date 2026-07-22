@@ -13,6 +13,12 @@ class DebugProtocol {
   static const int maskPeri = 0x40; // 第6位 (0100 0000) - 外设变量标志
   static const int maskType = 0x0F; // 低4位 (0000 1111) 用于原始类型
 
+  // ── ID 空间分区 ──
+  // 0x0000 ~ 0x00FF: 协议控制帧 (256 slots, 将来新增包类型只用这个区间)
+  // 0x0100 ~ 0xFFFF: 变量 ID (65280 slots)
+  static const int protoReservedMax = 0x00FF; // 协议保留区间上界
+  static const int varIdBase         = 0x0100; // 变量 ID 起始值
+
   // ── 语义分类常量 ──
   static const int catAdcErr    = 0x00;
   static const int catOuterLoop = 0x01;
@@ -92,7 +98,7 @@ class DebugProtocol {
         bData.setUint32(0, value, Endian.big);
       inner.add(bData.buffer.asUint8List(0, 4));
     }
-    return _finalizeFrame(0x55, inner.takeBytes());
+    return _finalizeFrame(0x5A, inner.takeBytes());
   }
 
   // --- 2. 构建动态注册指令 (CMD 0x56) ---

@@ -387,6 +387,13 @@ class DeviceCore {
       return;
     }
 
+    // ID 空间守卫：0x0000~0x00FF 为协议保留区间
+    // 走到这里说明不是已知协议帧（0xFC~0xFF 已在上面 return），
+    // 如果也不是已注册变量则丢弃，防止未注册的保留区 ID 被误当变量处理
+    if (vid <= DebugProtocol.protoReservedMax && !registry.containsKey(vid)) {
+      return;
+    }
+
     if (registry.containsKey(vid)) {
       dynamic val = 0;
       final bd = ByteData.sublistView(dataPart);
